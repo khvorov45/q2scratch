@@ -113,3 +113,24 @@ typedef struct Strarr {
     Str* ptr;
     i64 len;
 } Strarr;
+
+static bool streq(Str str1, Str str2) {
+    bool result = false;
+    if (str1.len == str2.len) {
+        result = memeq(str1.ptr, str2.ptr, str1.len);
+    }
+    return result;
+}
+
+static bool strarreq(Strarr arr1, Strarr arr2) {
+    bool result = false;
+    if (arr1.len == arr2.len) {
+        result = true;
+        for (i64 index = 0; index < arr1.len && result; index++) {
+            Str str1 = arr1.ptr[index];
+            Str str2 = arr2.ptr[index];
+            result = streq(str1, str2);
+        }
+    }
+    return result;
+}
