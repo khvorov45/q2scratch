@@ -24,11 +24,12 @@
 #define absval(x) ((x) < 0 ? -(x) : x)
 #define unused(x) ((x) = (x))
 #define carrayCount(x) (sizeof(x) / sizeof((x)[0]))
-#define dynarrpush(arr, val) assert((arr).len < (arr).cap); (arr).ptr[(arr).len++] = (val)
+#define dynarrpush(arr, val) assert((arr)->len < (arr)->cap); (arr)->ptr[(arr)->len++] = (val)
 #define dynarrpusharr(arr, val) assert((arr).len + (val).len <= (arr).cap); memcpy((arr).ptr + (arr).len, (val).ptr, (val).len * sizeof(*(val).ptr)); (arr).len += (val).len
 #define slicefromcarray(carr) {.ptr = carr, .len = carrayCount(carr)}
 #define arenaAllocArray(arena, type, count) ((type*)arenaAlloc((arena), sizeof(type) * (count)))
 #define arenaAllocAndZeroArray(arena, type, count) ((type*)arenaAllocAndZero((arena), sizeof(type) * (count)))
+#define arenaAllocDynarr(arena, type, capacity) {.ptr = arenaAllocArray(arena, type, capacity), .len = 0, .cap = capacity}
 #define tempMemoryBlock(arena_) for (TempMemory _temp_ = beginTempMemory(arena_); _temp_.arena; endTempMemory(&_temp_))
 
 typedef int8_t i8;
@@ -177,17 +178,169 @@ static void striterAdvanceOne(StrIter* iter) {
 }
 
 static void striterAdvanceUntilWhitespace(StrIter* iter) {
-	if (!striterEnded(iter)) {
-		while (!isspace(*iter->cur.ptr)) {
-			striterAdvanceOne(iter);
-		}
-	}
+    while (!striterEnded(iter) && !isspace(*iter->cur.ptr)) {
+        striterAdvanceOne(iter);
+    }
 }
 
 static void striterAdvancePastWhitespace(StrIter* iter) {
-	if (!striterEnded(iter)) {
-		while (isspace(*iter->cur.ptr)) {
-			striterAdvanceOne(iter);
-		}
-	}
+    while (!striterEnded(iter) && isspace(*iter->cur.ptr)) {
+        striterAdvanceOne(iter);
+    }
 }
+
+//
+// SECTION Commands
+//
+
+typedef void (*CommandProc)(void*);
+
+typedef struct Command {
+	CommandProc proc;
+	Str name;
+} Command;
+typedef struct Commands {Command* ptr; i64 len; i64 cap;} Commands;
+
+static Command* commandsFindByName(Commands* cmds, Str cmdname) {
+    Command* result = 0;
+	for (i64 index = 0; index < cmds->len && !result; index++) {
+        Command* var = cmds->ptr + index;
+		if (streq(cmdname, var->name)) {
+			result = var;
+        }
+    }
+	return result;
+}
+
+typedef struct CommandVar {
+	Str name;
+	Str string;
+	Str latched_string; // NOTE: for CVAR_LATCH vars
+	i64 flags;
+	bool modified; // NOTE: set each time the cvar is changed
+	float value;
+} CommandVar;
+typedef struct CommandVars {CommandVar* ptr; i64 len; i64 cap;} CommandVars;
+
+static CommandVar* commandVarsFindByName(CommandVars* vars, Str varname) {
+    CommandVar* result = 0;
+	for (i64 index = 0; index < vars->len && !result; index++) {
+        CommandVar* var = vars->ptr + index;
+		if (streq(varname, var->name)) {
+			result = var;
+        }
+    }
+	return result;
+}
+
+#define addCommand(cmds, vars, name) addCommand_(cmds, vars, STR(STRINGIFY(name)), (CommandProc)name);
+void addCommand_(Commands* cmds, CommandVars* vars, Str name, CommandProc function) {
+    if (cmds->len < cmds->cap) {
+        if (commandVarsFindByName(vars, name) == 0) {
+            if (commandsFindByName(cmds, name) == 0) {
+                Command entry = {.proc = function, .name = name};
+                dynarrpush(cmds, entry);
+            } else {
+                // Com_Printf("addCommand: %*s already defined\n", LIT(name));
+            }
+        } else {
+            // Com_Printf("addCommand: %*s already defined as a var\n", LIT(name));
+        }
+    } else {
+        // Com_Printf("addCommand: %*s could not be added, buffer full\n", LIT(name));
+    }
+}
+
+void cmdlist(Commands* cmds) {
+	for (i64 index = 0; index < cmds->len; index++) {
+        Command entry = cmds->ptr[index];
+        unused(entry);
+		// Com_Printf ("%s\n", cmd->name);
+	}
+	// Com_Printf ("%i commands\n", i);
+}
+
+
+
+void commonInit(Arena* arena) {	
+    Commands* cmds = arenaAllocAndZeroArray(arena, Commands, 1);
+	CommandVars* vars = arenaAllocAndZeroArray(arena, CommandVars, 1);
+	*cmds = (Commands) arenaAllocDynarr(arena, Command, 1024);
+    *vars = (CommandVars) arenaAllocDynarr(arena, CommandVar, 1024);
+
+	addCommand(cmds, vars, cmdlist);
+	// addCommand(STR("exec"), Cmd_Exec_f);
+	// addCommand(STR("echo"), Cmd_Echo_f);
+	// addCommand(STR("alias"), Cmd_Alias_f);
+	// addCommand(STR("wait"), Cmd_Wait_f);
+// 	Cvar_Init ();
+
+// 	Key_Init ();
+
+// 	// we need to add the early commands twice, because
+// 	// a basedir or cddir needs to be set before execing
+// 	// config files, but we want other parms to override
+// 	// the settings of the config files
+// 	Cbuf_AddEarlyCommands (false);
+// 	Cbuf_Execute ();
+
+// 	FS_InitFilesystem ();
+
+// 	Cbuf_AddText ("exec default.cfg\n");
+// 	Cbuf_AddText ("exec config.cfg\n");
+
+// 	Cbuf_AddEarlyCommands (true);
+// 	Cbuf_Execute ();
+
+// 	//
+// 	// init commands and vars
+// 	//
+//     Cmd_AddCommand ("z_stats", Z_Stats_f);
+//     Cmd_AddCommand ("error", Com_Error_f);
+
+// 	host_speeds = Cvar_Get ("host_speeds", "0", 0);
+// 	log_stats = Cvar_Get ("log_stats", "0", 0);
+// 	developer = Cvar_Get ("developer", "0", 0);
+// 	timescale = Cvar_Get ("timescale", "1", 0);
+// 	fixedtime = Cvar_Get ("fixedtime", "0", 0);
+// 	logfile_active = Cvar_Get ("logfile", "0", 0);
+// 	showtrace = Cvar_Get ("showtrace", "0", 0);
+// #ifdef DEDICATED_ONLY
+// 	dedicated = Cvar_Get ("dedicated", "1", CVAR_NOSET);
+// #else
+// 	dedicated = Cvar_Get ("dedicated", "0", CVAR_NOSET);
+// #endif
+
+// 	char* s = va("%4.2f %s %s %s", VERSION, CPUSTRING, __DATE__, BUILDSTRING);
+// 	Cvar_Get ("version", s, CVAR_SERVERINFO|CVAR_NOSET);
+
+
+// 	if (dedicated->value)
+// 		Cmd_AddCommand ("quit", Com_Quit);
+
+// 	Sys_Init ();
+
+// 	NET_Init ();
+// 	Netchan_Init ();
+
+// 	SV_Init ();
+// 	CL_Init ();
+
+// 	// add + commands from command line
+// 	if (!Cbuf_AddLateCommands ())
+// 	{	// if the user didn't give any commands, run default action
+// 		if (!dedicated->value)
+// 			Cbuf_AddText ("d1\n");
+// 		else
+// 			Cbuf_AddText ("dedicated_start\n");
+// 		Cbuf_Execute ();
+// 	}
+// 	else
+// 	{	// the user asked for something explicit
+// 		// so drop the loading plaque
+// 		SCR_EndLoadingPlaque ();
+// 	}
+
+// 	Com_Printf ("====== Quake2 Initialized ======\n\n");	
+}
+

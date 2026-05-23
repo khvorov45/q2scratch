@@ -4,6 +4,10 @@
 
 #pragma comment(lib, "user32")
 
+//
+// SECTION Misc
+//
+
 static Strslice parseCommandLine(Arena* arena, Str cmdline) {	
 	Strslice cmdLineArguments = {.len = 1}; // NOTE: the first one is the executable
 
@@ -46,139 +50,6 @@ void ShowErrorMsgBoxAndExit(Str errorMsg) {
 	ExitProcess(1);
 }
 
-typedef void (*CommandProc)(void*);
-
-typedef struct CommandProcEntry {
-	CommandProc proc;
-	Str name;
-	struct CommandProcEntry* next;	
-} CommandProcEntry;
-
-typedef struct CommandProcList {
-	CommandProcEntry sentinel;
-	CommandProcEntry* freelist;
-} CommandProcList;
-
-#define addCommand(name) addCommand_(STR(STRINGIFY(name)), (CommandProc)name);
-void addCommand_(Str cmdname, CommandProc function) {
-// 	cmd_function_t	*cmd;
-	
-// // fail if the command is a variable name
-// 	if (Cvar_VariableString(cmd_name)[0])
-// 	{
-// 		Com_Printf ("addCommand: %s already defined as a var\n", cmd_name);
-// 		return;
-// 	}
-	
-// // fail if the command already exists
-// 	for (cmd=cmd_functions ; cmd ; cmd=cmd->next)
-// 	{
-// 		if (!strcmp (cmd_name, cmd->name))
-// 		{
-// 			Com_Printf ("addCommand: %s already defined\n", cmd_name);
-// 			return;
-// 		}
-// 	}
-
-// 	cmd = Z_Malloc (sizeof(cmd_function_t));
-// 	cmd->name = cmd_name;
-// 	cmd->function = function;
-// 	cmd->next = cmd_functions;
-// 	cmd_functions = cmd;
-}
-
-void cmdlist(CommandProcList* cmds) {
-	i64 index = 0;
-	for (CommandProcEntry* cmd = cmds->sentinel.next; cmd; cmd=cmd->next, index++) {
-		// Com_Printf ("%s\n", cmd->name);
-	}
-	// Com_Printf ("%i commands\n", i);
-}
-
-void commonInit(Arena* arena, Strslice cmdArgs) {
-	unused(cmdArgs);
-	
-	// NOTE: prepare enough of the subsystems to handle cvar and command buffer management
-	i64 cmdArenaSize = 8 * Kilobyte;
-	Arena cmdArena = {.base = arenaAllocAndZero(arena, cmdArenaSize), .size = cmdArenaSize};
-	unused(cmdArena);
-
-	addCommand(cmdlist);
-	// addCommand(STR("exec"), Cmd_Exec_f);
-	// addCommand(STR("echo"), Cmd_Echo_f);
-	// addCommand(STR("alias"), Cmd_Alias_f);
-	// addCommand(STR("wait"), Cmd_Wait_f);
-// 	Cvar_Init ();
-
-// 	Key_Init ();
-
-// 	// we need to add the early commands twice, because
-// 	// a basedir or cddir needs to be set before execing
-// 	// config files, but we want other parms to override
-// 	// the settings of the config files
-// 	Cbuf_AddEarlyCommands (false);
-// 	Cbuf_Execute ();
-
-// 	FS_InitFilesystem ();
-
-// 	Cbuf_AddText ("exec default.cfg\n");
-// 	Cbuf_AddText ("exec config.cfg\n");
-
-// 	Cbuf_AddEarlyCommands (true);
-// 	Cbuf_Execute ();
-
-// 	//
-// 	// init commands and vars
-// 	//
-//     Cmd_AddCommand ("z_stats", Z_Stats_f);
-//     Cmd_AddCommand ("error", Com_Error_f);
-
-// 	host_speeds = Cvar_Get ("host_speeds", "0", 0);
-// 	log_stats = Cvar_Get ("log_stats", "0", 0);
-// 	developer = Cvar_Get ("developer", "0", 0);
-// 	timescale = Cvar_Get ("timescale", "1", 0);
-// 	fixedtime = Cvar_Get ("fixedtime", "0", 0);
-// 	logfile_active = Cvar_Get ("logfile", "0", 0);
-// 	showtrace = Cvar_Get ("showtrace", "0", 0);
-// #ifdef DEDICATED_ONLY
-// 	dedicated = Cvar_Get ("dedicated", "1", CVAR_NOSET);
-// #else
-// 	dedicated = Cvar_Get ("dedicated", "0", CVAR_NOSET);
-// #endif
-
-// 	char* s = va("%4.2f %s %s %s", VERSION, CPUSTRING, __DATE__, BUILDSTRING);
-// 	Cvar_Get ("version", s, CVAR_SERVERINFO|CVAR_NOSET);
-
-
-// 	if (dedicated->value)
-// 		Cmd_AddCommand ("quit", Com_Quit);
-
-// 	Sys_Init ();
-
-// 	NET_Init ();
-// 	Netchan_Init ();
-
-// 	SV_Init ();
-// 	CL_Init ();
-
-// 	// add + commands from command line
-// 	if (!Cbuf_AddLateCommands ())
-// 	{	// if the user didn't give any commands, run default action
-// 		if (!dedicated->value)
-// 			Cbuf_AddText ("d1\n");
-// 		else
-// 			Cbuf_AddText ("dedicated_start\n");
-// 		Cbuf_Execute ();
-// 	}
-// 	else
-// 	{	// the user asked for something explicit
-// 		// so drop the loading plaque
-// 		SCR_EndLoadingPlaque ();
-// 	}
-
-// 	Com_Printf ("====== Quake2 Initialized ======\n\n");	
-}
-
 static void allTests_(Arena* arena) {tempMemoryBlock(arena) {
 	{
 		Str str1 = STR("test str 1");
@@ -199,6 +70,7 @@ static void allTests_(Arena* arena) {tempMemoryBlock(arena) {
 
 	{
 		Str cmdLine = STR("  test cmd   line  ");
+		Str cmdLine2 = STR("test cmd   line");
 		Str arg0 = STR("exe");	
 		Str arg1 = STR("test");	
 		Str arg2 = STR("cmd");	
@@ -207,6 +79,8 @@ static void allTests_(Arena* arena) {tempMemoryBlock(arena) {
 		Strslice expected = slicefromcarray(rawexpected);
 		Strslice result = parseCommandLine(arena, cmdLine);
 		assert(strsliceeq(result, expected));
+		Strslice result2 = parseCommandLine(arena, cmdLine2);
+		assert(strsliceeq(result2, expected));
 	}
 }}
 
@@ -223,8 +97,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	allTests_(arena);
 
 	Strslice cmdLineArguments = parseCommandLine(arena, (Str) {lpCmdLine, strlen(lpCmdLine)});
+	unused(cmdLineArguments);
 
-	commonInit(arena, cmdLineArguments);
+	commonInit(arena);
 	// int oldtime = Sys_Milliseconds ();
 
     // NOTE main window message loop

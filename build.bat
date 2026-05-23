@@ -10,4 +10,5 @@
 @REM     -Wno-deprecated-declarations -Wno-incompatible-pointer-types -Wno-pointer-sign -Wno-parentheses -Wno-return-type -Wno-absolute-value -Wno-switch ^
 @REM     -g -o build/quake2.exe
 
-clang code/platform_windows.c -std=c2x -Wall -Wextra -Werror -ferror-limit=1 -Wno-unused-function -Wno-unused-parameter -g -o build/platform_windows.exe
+@rem -Wno-unused-parameter -Wno-unused-variable
+clang code/platform_windows.c -std=c2x -Wall -Wextra -Werror -ferror-limit=1 -Wno-unused-function -g -o build/platform_windows.exe
