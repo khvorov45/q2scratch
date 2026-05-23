@@ -1,8 +1,12 @@
+#define STB_SPRINTF_STATIC
+#define STB_SPRINTF_IMPLEMENTATION
+#include "stb_sprintf.h"
+
 #include <stdint.h>
 #include <stddef.h>
 #include <stdarg.h>
 #include <string.h>
-#include <stdbool.h>
+#include <ctype.h>
 
 #define Byte 1
 #define Kilobyte 1024 * Byte
@@ -19,9 +23,10 @@
 #define LIT(x) (int)x.len, x.ptr
 #define absval(x) ((x) < 0 ? -(x) : x)
 #define unused(x) ((x) = (x))
-#define arrayCount(x) (sizeof(x) / sizeof((x)[0]))
-#define arrpush(arr, val) assert((arr).len < (arr).cap); (arr).ptr[(arr).len++] = (val)
-#define arrpusharr(arr, val) assert((arr).len + (val).len <= (arr).cap); memcpy((arr).ptr + (arr).len, (val).ptr, (val).len * sizeof(*(val).ptr)); (arr).len += (val).len
+#define carrayCount(x) (sizeof(x) / sizeof((x)[0]))
+#define dynarrpush(arr, val) assert((arr).len < (arr).cap); (arr).ptr[(arr).len++] = (val)
+#define dynarrpusharr(arr, val) assert((arr).len + (val).len <= (arr).cap); memcpy((arr).ptr + (arr).len, (val).ptr, (val).len * sizeof(*(val).ptr)); (arr).len += (val).len
+#define slicefromcarray(carr) {.ptr = carr, .len = carrayCount(carr)}
 #define arenaAllocArray(arena, type, count) ((type*)arenaAlloc((arena), sizeof(type) * (count)))
 #define arenaAllocAndZeroArray(arena, type, count) ((type*)arenaAllocAndZero((arena), sizeof(type) * (count)))
 #define tempMemoryBlock(arena_) for (TempMemory _temp_ = beginTempMemory(arena_); _temp_.arena; endTempMemory(&_temp_))
@@ -37,16 +42,16 @@ typedef uint64_t u64;
 typedef float f32;
 typedef double f64;
 
-typedef struct i8arr {i8* ptr; i64 len;} i8arr;
-typedef struct i16arr {i16* ptr; i64 len;} i16arr;
-typedef struct i32arr {i32* ptr; i64 len;} i32arr;
-typedef struct i64arr {i64* ptr; i64 len;} i64arr;
-typedef struct u8arr {u8* ptr; i64 len;} u8arr;
-typedef struct u16arr {u16* ptr; i64 len;} u16arr;
-typedef struct u32arr {u32* ptr; i64 len;} u32arr;
-typedef struct u64arr {u64* ptr; i64 len;} u64arr;
-typedef struct f32arr {f32* ptr; i64 len;} f32arr;
-typedef struct f64arr {f64* ptr; i64 len;} f64arr;
+typedef struct i8slice {i8* ptr; i64 len;} i8slice;
+typedef struct i16slice {i16* ptr; i64 len;} i16slice;
+typedef struct i32slice {i32* ptr; i64 len;} i32slice;
+typedef struct i64slice {i64* ptr; i64 len;} i64slice;
+typedef struct u8slice {u8* ptr; i64 len;} u8slice;
+typedef struct u16slice {u16* ptr; i64 len;} u16slice;
+typedef struct u32slice {u32* ptr; i64 len;} u32slice;
+typedef struct u64slice {u64* ptr; i64 len;} u64slice;
+typedef struct f32slice {f32* ptr; i64 len;} f32slice;
+typedef struct f64slice {f64* ptr; i64 len;} f64slice;
 
 //
 // SECTION Memory
@@ -109,10 +114,10 @@ typedef struct Str {
     i64 len;
 } Str;
 
-typedef struct Strarr {
+typedef struct Strslice {
     Str* ptr;
     i64 len;
-} Strarr;
+} Strslice;
 
 static bool streq(Str str1, Str str2) {
     bool result = false;
@@ -122,15 +127,67 @@ static bool streq(Str str1, Str str2) {
     return result;
 }
 
-static bool strarreq(Strarr arr1, Strarr arr2) {
+static bool strsliceeq(Strslice slice1, Strslice slice2) {
     bool result = false;
-    if (arr1.len == arr2.len) {
+    if (slice1.len == slice2.len) {
         result = true;
-        for (i64 index = 0; index < arr1.len && result; index++) {
-            Str str1 = arr1.ptr[index];
-            Str str2 = arr2.ptr[index];
+        for (i64 index = 0; index < slice1.len && result; index++) {
+            Str str1 = slice1.ptr[index];
+            Str str2 = slice2.ptr[index];
             result = streq(str1, str2);
         }
     }
     return result;
+}
+
+__attribute__((format(printf,2,3)))
+static Str strfmt(Arena* arena, char* fmt, ...) {
+    char* out = arenaFreeptr(arena);
+
+    va_list va;
+    va_start(va, fmt);
+    int printResult = stbsp_vsnprintf(out, arenaFreesize(arena), fmt, va);
+    va_end(va);
+
+    arena->used += printResult + 1;
+    Str result = {out, printResult};
+    return result;
+}
+
+typedef struct StrIter {
+	Str cur;
+} StrIter;
+
+static StrIter striter(Str str) {
+	if (str.len > 0) assert(str.ptr);
+	StrIter iter = {.cur = str};
+	return iter;
+}
+
+static bool striterEnded(StrIter* iter) {
+	bool result = iter->cur.len == 0;
+	return result;
+}
+
+static void striterAdvanceOne(StrIter* iter) {
+	if (!striterEnded(iter)) {
+		iter->cur.ptr++;
+		iter->cur.len--;
+	}
+}
+
+static void striterAdvanceUntilWhitespace(StrIter* iter) {
+	if (!striterEnded(iter)) {
+		while (!isspace(*iter->cur.ptr)) {
+			striterAdvanceOne(iter);
+		}
+	}
+}
+
+static void striterAdvancePastWhitespace(StrIter* iter) {
+	if (!striterEnded(iter)) {
+		while (isspace(*iter->cur.ptr)) {
+			striterAdvanceOne(iter);
+		}
+	}
 }

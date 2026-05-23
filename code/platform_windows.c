@@ -1,58 +1,22 @@
 #include "common.c"
 
-#include "windows.h"
+#include <windows.h>
 
 #pragma comment(lib, "user32")
 
-static bool charIsPrintable(char ch) {
-	char firstPrintable = ' ';
-	char lastPrintable = '~';
-	bool result = ch >= firstPrintable && ch <= lastPrintable;
-	return result;
-}
+static Strslice parseCommandLine(Arena* arena, Str cmdline) {	
+	Strslice cmdLineArguments = {.len = 1}; // NOTE: the first one is the executable
 
-typedef struct CStrIter {
-	char* ptr;
-	char* curptr;
-	bool ended;
-} CStrIter;
-
-static CStrIter cstriter(char* str) {
-	CStrIter iter = {.ptr = str, .curptr = str, .ended = !(str && *str)};
-	return iter;
-}
-
-static void cstriterAdvanceUntil(CStrIter* iter, char ch) {
-	if (!iter->ended) {
-		while (*iter->curptr && *iter->curptr != ch) {
-			iter->curptr++;
-		}
-	}
-	iter->ended = *iter->curptr == '\0';
-}
-
-static void cstriterAdvancePast(CStrIter* iter, char ch) {
-	if (!iter->ended) {
-		while (*iter->curptr == ch) {
-			iter->curptr++;
-		}
-	}
-	iter->ended = *iter->curptr == '\0';
-}
-
-static Strarr parseCommandLine(Arena* arena, char* lpCmdLine) {	
-	Strarr cmdLineArguments = {.len = 1}; // NOTE: the first one is the executable
-
-	CStrIter iterCopy = {};
+	StrIter iterNoLeadingWhitespace = {};
 	{
-		CStrIter iter = cstriter(lpCmdLine);
-		cstriterAdvancePast(&iter, ' '); // NOTE(khvorov) Leading spaces
-		iterCopy = iter;
+		StrIter iter = striter(cmdline);
+		striterAdvancePastWhitespace(&iter);
+		iterNoLeadingWhitespace = iter;
 	
 		// NOTE(khvorov) Count
-		for (;!iter.ended;) {
-			cstriterAdvanceUntil(&iter, ' ');
-			cstriterAdvancePast(&iter, ' ');
+		for (;!striterEnded(&iter);) {
+			striterAdvanceUntilWhitespace(&iter);
+			striterAdvancePastWhitespace(&iter);
 			cmdLineArguments.len++;
 		}
 	}
@@ -61,15 +25,158 @@ static Strarr parseCommandLine(Arena* arena, char* lpCmdLine) {
 	cmdLineArguments.ptr = arenaAllocAndZeroArray(arena, Str, cmdLineArguments.len);
 	cmdLineArguments.ptr[0] = STR("exe");
 	i64 curArgIndex = 1;
-	for (;!iterCopy.ended;) {
-		cstriterAdvancePast(&iterCopy, ' ');
-		char* argStart = iterCopy.curptr;
-		cstriterAdvanceUntil(&iterCopy, ' ');
-		cmdLineArguments.ptr[curArgIndex++] = (Str) {.ptr = argStart, .len = iterCopy.curptr - argStart};
-		cstriterAdvancePast(&iterCopy, ' ');
+	for (;!striterEnded(&iterNoLeadingWhitespace);) {
+		striterAdvancePastWhitespace(&iterNoLeadingWhitespace);
+		char* argStart = iterNoLeadingWhitespace.cur.ptr;
+		striterAdvanceUntilWhitespace(&iterNoLeadingWhitespace);
+		cmdLineArguments.ptr[curArgIndex++] = (Str) {.ptr = argStart, .len = iterNoLeadingWhitespace.cur.ptr - argStart};
+		striterAdvancePastWhitespace(&iterNoLeadingWhitespace);
 	}
 
 	return cmdLineArguments;
+}
+
+void ShowErrorMsgBoxAndExit(Str errorMsg) {
+	i64 textBufSize = 1024;
+	char text[textBufSize];
+	assert(errorMsg.len - 1 < textBufSize);
+	memcpy(text, errorMsg.ptr, errorMsg.len);
+	text[errorMsg.len] = '\0';
+	MessageBox(NULL, text, "Error", MB_OK);
+	ExitProcess(1);
+}
+
+typedef void (*CommandProc)(void*);
+
+typedef struct CommandProcEntry {
+	CommandProc proc;
+	Str name;
+	struct CommandProcEntry* next;	
+} CommandProcEntry;
+
+typedef struct CommandProcList {
+	CommandProcEntry sentinel;
+	CommandProcEntry* freelist;
+} CommandProcList;
+
+#define addCommand(name) addCommand_(STR(STRINGIFY(name)), (CommandProc)name);
+void addCommand_(Str cmdname, CommandProc function) {
+// 	cmd_function_t	*cmd;
+	
+// // fail if the command is a variable name
+// 	if (Cvar_VariableString(cmd_name)[0])
+// 	{
+// 		Com_Printf ("addCommand: %s already defined as a var\n", cmd_name);
+// 		return;
+// 	}
+	
+// // fail if the command already exists
+// 	for (cmd=cmd_functions ; cmd ; cmd=cmd->next)
+// 	{
+// 		if (!strcmp (cmd_name, cmd->name))
+// 		{
+// 			Com_Printf ("addCommand: %s already defined\n", cmd_name);
+// 			return;
+// 		}
+// 	}
+
+// 	cmd = Z_Malloc (sizeof(cmd_function_t));
+// 	cmd->name = cmd_name;
+// 	cmd->function = function;
+// 	cmd->next = cmd_functions;
+// 	cmd_functions = cmd;
+}
+
+void cmdlist(CommandProcList* cmds) {
+	i64 index = 0;
+	for (CommandProcEntry* cmd = cmds->sentinel.next; cmd; cmd=cmd->next, index++) {
+		// Com_Printf ("%s\n", cmd->name);
+	}
+	// Com_Printf ("%i commands\n", i);
+}
+
+void commonInit(Arena* arena, Strslice cmdArgs) {
+	unused(cmdArgs);
+	
+	// NOTE: prepare enough of the subsystems to handle cvar and command buffer management
+	i64 cmdArenaSize = 8 * Kilobyte;
+	Arena cmdArena = {.base = arenaAllocAndZero(arena, cmdArenaSize), .size = cmdArenaSize};
+	unused(cmdArena);
+
+	addCommand(cmdlist);
+	// addCommand(STR("exec"), Cmd_Exec_f);
+	// addCommand(STR("echo"), Cmd_Echo_f);
+	// addCommand(STR("alias"), Cmd_Alias_f);
+	// addCommand(STR("wait"), Cmd_Wait_f);
+// 	Cvar_Init ();
+
+// 	Key_Init ();
+
+// 	// we need to add the early commands twice, because
+// 	// a basedir or cddir needs to be set before execing
+// 	// config files, but we want other parms to override
+// 	// the settings of the config files
+// 	Cbuf_AddEarlyCommands (false);
+// 	Cbuf_Execute ();
+
+// 	FS_InitFilesystem ();
+
+// 	Cbuf_AddText ("exec default.cfg\n");
+// 	Cbuf_AddText ("exec config.cfg\n");
+
+// 	Cbuf_AddEarlyCommands (true);
+// 	Cbuf_Execute ();
+
+// 	//
+// 	// init commands and vars
+// 	//
+//     Cmd_AddCommand ("z_stats", Z_Stats_f);
+//     Cmd_AddCommand ("error", Com_Error_f);
+
+// 	host_speeds = Cvar_Get ("host_speeds", "0", 0);
+// 	log_stats = Cvar_Get ("log_stats", "0", 0);
+// 	developer = Cvar_Get ("developer", "0", 0);
+// 	timescale = Cvar_Get ("timescale", "1", 0);
+// 	fixedtime = Cvar_Get ("fixedtime", "0", 0);
+// 	logfile_active = Cvar_Get ("logfile", "0", 0);
+// 	showtrace = Cvar_Get ("showtrace", "0", 0);
+// #ifdef DEDICATED_ONLY
+// 	dedicated = Cvar_Get ("dedicated", "1", CVAR_NOSET);
+// #else
+// 	dedicated = Cvar_Get ("dedicated", "0", CVAR_NOSET);
+// #endif
+
+// 	char* s = va("%4.2f %s %s %s", VERSION, CPUSTRING, __DATE__, BUILDSTRING);
+// 	Cvar_Get ("version", s, CVAR_SERVERINFO|CVAR_NOSET);
+
+
+// 	if (dedicated->value)
+// 		Cmd_AddCommand ("quit", Com_Quit);
+
+// 	Sys_Init ();
+
+// 	NET_Init ();
+// 	Netchan_Init ();
+
+// 	SV_Init ();
+// 	CL_Init ();
+
+// 	// add + commands from command line
+// 	if (!Cbuf_AddLateCommands ())
+// 	{	// if the user didn't give any commands, run default action
+// 		if (!dedicated->value)
+// 			Cbuf_AddText ("d1\n");
+// 		else
+// 			Cbuf_AddText ("dedicated_start\n");
+// 		Cbuf_Execute ();
+// 	}
+// 	else
+// 	{	// the user asked for something explicit
+// 		// so drop the loading plaque
+// 		SCR_EndLoadingPlaque ();
+// 	}
+
+// 	Com_Printf ("====== Quake2 Initialized ======\n\n");	
 }
 
 static void allTests_(Arena* arena) {tempMemoryBlock(arena) {
@@ -81,13 +188,13 @@ static void allTests_(Arena* arena) {tempMemoryBlock(arena) {
 		Str rawarr2[2] = {str1, str2};
 		Str rawarr3[2] = {str1, str3};
 		Str rawarr4[3] = {str1, str2, str3};
-		Strarr arr1 = {.ptr = rawarr1, .len = arrayCount(rawarr1)};
-		Strarr arr2 = {.ptr = rawarr2, .len = arrayCount(rawarr2)};
-		Strarr arr3 = {.ptr = rawarr3, .len = arrayCount(rawarr3)};
-		Strarr arr4 = {.ptr = rawarr4, .len = arrayCount(rawarr4)};
-		assert(strarreq(arr1, arr2));
-		assert(!strarreq(arr1, arr3));
-		assert(!strarreq(arr1, arr4));
+		Strslice arr1 = slicefromcarray(rawarr1);
+		Strslice arr2 = slicefromcarray(rawarr2);
+		Strslice arr3 = slicefromcarray(rawarr3);
+		Strslice arr4 = slicefromcarray(rawarr4);
+		assert(strsliceeq(arr1, arr2));
+		assert(!strsliceeq(arr1, arr3));
+		assert(!strsliceeq(arr1, arr4));
 	}
 
 	{
@@ -97,9 +204,9 @@ static void allTests_(Arena* arena) {tempMemoryBlock(arena) {
 		Str arg2 = STR("cmd");	
 		Str arg3 = STR("line");	
 		Str rawexpected[4] = {arg0, arg1, arg2, arg3};
-		Strarr expected = {.ptr = rawexpected, .len = arrayCount(rawexpected)};
-		Strarr result = parseCommandLine(arena, cmdLine.ptr);
-		assert(strarreq(result, expected));
+		Strslice expected = slicefromcarray(rawexpected);
+		Strslice result = parseCommandLine(arena, cmdLine);
+		assert(strsliceeq(result, expected));
 	}
 }}
 
@@ -115,30 +222,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
 	allTests_(arena);
 
-	Strarr cmdLineArguments = parseCommandLine(arena, lpCmdLine);
-	unused(cmdLineArguments);
+	Strslice cmdLineArguments = parseCommandLine(arena, (Str) {lpCmdLine, strlen(lpCmdLine)});
 
-    // TODO(khvorov)
-	// NOTE if we find the CD, add a +set cddir xxx command line
-	// char* cddir = Sys_ScanForCD ();
-	// if (cddir && argc < MAX_NUM_ARGVS - 3)
-	// {
-	// 	int		i;
-
-	// 	// don't override a cddir on the command line
-	// 	for (i=0 ; i<argc ; i++)
-	// 		if (!strcmp(argv[i], "cddir"))
-	// 			break;
-	// 	if (i == argc)
-	// 	{
-	// 		argv[argc++] = "+set";
-	// 		argv[argc++] = "cddir";
-	// 		argv[argc++] = cddir;
-	// 	}
-	// }
-
-    // TODO(khvorov)
-	// Qcommon_Init (argc, argv);
+	commonInit(arena, cmdLineArguments);
 	// int oldtime = Sys_Milliseconds ();
 
     // NOTE main window message loop
