@@ -234,7 +234,7 @@ static CommandVar* commandVarsFindByName(CommandVars* vars, Str varname) {
 }
 
 #define addCommand(cmds, vars, name) addCommand_(cmds, vars, STR(STRINGIFY(name)), (CommandProc)name);
-void addCommand_(Commands* cmds, CommandVars* vars, Str name, CommandProc function) {
+static void addCommand_(Commands* cmds, CommandVars* vars, Str name, CommandProc function) {
     if (cmds->len < cmds->cap) {
         if (commandVarsFindByName(vars, name) == 0) {
             if (commandsFindByName(cmds, name) == 0) {
@@ -251,7 +251,7 @@ void addCommand_(Commands* cmds, CommandVars* vars, Str name, CommandProc functi
     }
 }
 
-void cmdlist(Commands* cmds) {
+static void cmdlist(Commands* cmds) {
 	for (i64 index = 0; index < cmds->len; index++) {
         Command entry = cmds->ptr[index];
         unused(entry);
@@ -260,9 +260,7 @@ void cmdlist(Commands* cmds) {
 	// Com_Printf ("%i commands\n", i);
 }
 
-
-
-void commonInit(Arena* arena) {	
+static void commonInit(Arena* arena) {	
     Commands* cmds = arenaAllocAndZeroArray(arena, Commands, 1);
 	CommandVars* vars = arenaAllocAndZeroArray(arena, CommandVars, 1);
 	*cmds = (Commands) arenaAllocDynarr(arena, Command, 1024);

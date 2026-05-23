@@ -40,7 +40,7 @@ static Strslice parseCommandLine(Arena* arena, Str cmdline) {
 	return cmdLineArguments;
 }
 
-void ShowErrorMsgBoxAndExit(Str errorMsg) {
+static void ShowErrorMsgBoxAndExit(Str errorMsg) {
 	i64 textBufSize = 1024;
 	char text[textBufSize];
 	assert(errorMsg.len - 1 < textBufSize);
