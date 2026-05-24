@@ -30,6 +30,7 @@
 #define arenaAllocArray(arena, type, count) ((type*)arenaAlloc((arena), sizeof(type) * (count)))
 #define arenaAllocAndZeroArray(arena, type, count) ((type*)arenaAllocAndZero((arena), sizeof(type) * (count)))
 #define arenaAllocDynarr(arena, type, capacity) {.ptr = arenaAllocArray(arena, type, capacity), .len = 0, .cap = capacity}
+#define arenaAllocAndZeroDynarr(arena, type, capacity) {.ptr = arenaAllocAndZeroArray(arena, type, capacity), .len = 0, .cap = capacity}
 #define tempMemoryBlock(arena_) for (TempMemory _temp_ = beginTempMemory(arena_); _temp_.arena; endTempMemory(&_temp_))
 
 typedef int8_t i8;
@@ -78,6 +79,14 @@ static void* arenaAllocAndZero(Arena* arena, i64 size) {
     void* ptr = arenaAlloc(arena, size);
     memset(ptr, 0, size);
     return ptr;
+}
+
+static Arena arenaFromArena(Arena* arena, i64 size) {
+    Arena result = {
+        .base = arenaAlloc(arena, size),
+        .size = size,
+    };
+    return result;
 }
 
 typedef struct TempMemory {
@@ -190,6 +199,72 @@ static void striterAdvancePastWhitespace(StrIter* iter) {
 }
 
 //
+// SECTION Logging
+//
+
+typedef enum LogEntryCategory {
+    LogEntryCategory_Ok,
+    LogEntryCategory_Error,
+} LogEntryCategory;
+
+typedef struct LogEntry {
+    Str str;
+    u64 time;
+    LogEntryCategory category;
+} LogEntry;
+typedef struct LogEntries {LogEntry* ptr; i64 len; i64 cap;} LogEntries;
+
+typedef struct Log {
+    struct {
+        LogEntries entries;
+        Arena arena;
+    } circle[2];
+    i64 currentIndex;
+} Log;
+
+static void initLog(Log* log, Arena* arena, i64 maxEntryCount, i64 stringBufferSize) {
+    for (i64 index = 0; index < (i64)carrayCount(log->circle); index++) {
+        log->circle[index].entries = (LogEntries) arenaAllocDynarr(arena, LogEntry, maxEntryCount);
+        log->circle[index].arena = arenaFromArena(arena, stringBufferSize);
+    }
+}
+
+__attribute__((format(printf,3,4)))
+static void addLogEntry(Log* log_, LogEntryCategory category, char* fmt, ...) {
+    LogEntries* entries = &log_->circle[log_->currentIndex].entries;
+    Arena* arena = &log_->circle[log_->currentIndex].arena;
+
+    i64 maxExpectedSizeForALogEntry = 300;
+    if (entries->len >= entries->cap || arenaFreesize(arena) < maxExpectedSizeForALogEntry) {
+        log_->currentIndex = (log_->currentIndex + 1) % carrayCount(log_->circle);
+        entries = &log_->circle[log_->currentIndex].entries;
+        arena = &log_->circle[log_->currentIndex].arena;
+        arena->used = 0;
+        entries->len = 0;
+    }
+
+    assert(entries->len < entries->cap);
+    assert(arenaFreesize(arena) >= maxExpectedSizeForALogEntry);
+
+    char* out = arenaFreeptr(arena);
+
+    va_list va;
+    va_start(va, fmt);
+    int printResult = stbsp_vsnprintf(out, arenaFreesize(arena), fmt, va);
+    va_end(va);
+
+    arena->used += printResult + 1;
+    Str entrystr = {out, printResult};
+
+    LogEntry entry = {
+        .str = entrystr,
+        .time = __rdtsc(),
+        .category = category
+    };
+    dynarrpush(entries, entry);
+}
+
+//
 // SECTION Commands
 //
 
@@ -233,21 +308,21 @@ static CommandVar* commandVarsFindByName(CommandVars* vars, Str varname) {
 	return result;
 }
 
-#define addCommand(cmds, vars, name) addCommand_(cmds, vars, STR(STRINGIFY(name)), (CommandProc)name);
-static void addCommand_(Commands* cmds, CommandVars* vars, Str name, CommandProc function) {
+#define addCommand(log, cmds, vars, name) addCommand_(log, cmds, vars, STR(STRINGIFY(name)), (CommandProc)name);
+static void addCommand_(Log* log, Commands* cmds, CommandVars* vars, Str name, CommandProc function) {
     if (cmds->len < cmds->cap) {
         if (commandVarsFindByName(vars, name) == 0) {
             if (commandsFindByName(cmds, name) == 0) {
                 Command entry = {.proc = function, .name = name};
                 dynarrpush(cmds, entry);
             } else {
-                // Com_Printf("addCommand: %*s already defined\n", LIT(name));
+                addLogEntry(log, LogEntryCategory_Error, "addCommand: %*s already defined\n", LIT(name));
             }
         } else {
-            // Com_Printf("addCommand: %*s already defined as a var\n", LIT(name));
+            addLogEntry(log, LogEntryCategory_Error, "addCommand: %*s already defined as a var\n", LIT(name));
         }
     } else {
-        // Com_Printf("addCommand: %*s could not be added, buffer full\n", LIT(name));
+        addLogEntry(log, LogEntryCategory_Error, "addCommand: %*s could not be added, buffer full\n", LIT(name));
     }
 }
 
@@ -260,13 +335,16 @@ static void cmdlist(Commands* cmds) {
 	// Com_Printf ("%i commands\n", i);
 }
 
-static void commonInit(Arena* arena) {	
+static void gameInit(Arena* arena) {
+    Log* log = arenaAllocAndZeroArray(arena, Log, 1);
     Commands* cmds = arenaAllocAndZeroArray(arena, Commands, 1);
 	CommandVars* vars = arenaAllocAndZeroArray(arena, CommandVars, 1);
+
+    initLog(log, arena, 1024, 8 * Kilobyte);
 	*cmds = (Commands) arenaAllocDynarr(arena, Command, 1024);
     *vars = (CommandVars) arenaAllocDynarr(arena, CommandVar, 1024);
 
-	addCommand(cmds, vars, cmdlist);
+	addCommand(log, cmds, vars, cmdlist);
 	// addCommand(STR("exec"), Cmd_Exec_f);
 	// addCommand(STR("echo"), Cmd_Echo_f);
 	// addCommand(STR("alias"), Cmd_Alias_f);

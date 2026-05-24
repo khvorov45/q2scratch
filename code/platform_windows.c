@@ -82,6 +82,40 @@ static void allTests_(Arena* arena) {tempMemoryBlock(arena) {
 		Strslice result2 = parseCommandLine(arena, cmdLine2);
 		assert(strsliceeq(result2, expected));
 	}
+
+	{
+		Log log = {};
+		initLog(&log, arena, 2, 8 * Kilobyte);
+
+		addLogEntry(&log, LogEntryCategory_Ok, "test");
+		assert(streq(log.circle[0].entries.ptr[0].str, STR("test")));
+
+		addLogEntry(&log, LogEntryCategory_Ok, "test %i", 123);
+		assert(streq(log.circle[0].entries.ptr[0].str, STR("test")));
+		assert(streq(log.circle[0].entries.ptr[1].str, STR("test 123")));
+
+		assert(log.circle[0].entries.ptr[0].time < log.circle[0].entries.ptr[1].time);
+		assert(log.circle[0].entries.len == 2);
+		
+		addLogEntry(&log, LogEntryCategory_Ok, "second circle");
+		assert(streq(log.circle[0].entries.ptr[0].str, STR("test")));
+		assert(streq(log.circle[0].entries.ptr[1].str, STR("test 123")));
+		assert(streq(log.circle[1].entries.ptr[0].str, STR("second circle")));
+
+		addLogEntry(&log, LogEntryCategory_Ok, "second circle 2");
+		assert(streq(log.circle[0].entries.ptr[0].str, STR("test")));
+		assert(streq(log.circle[0].entries.ptr[1].str, STR("test 123")));
+		assert(streq(log.circle[1].entries.ptr[0].str, STR("second circle")));
+		assert(streq(log.circle[1].entries.ptr[1].str, STR("second circle 2")));
+
+		addLogEntry(&log, LogEntryCategory_Ok, "back to first circle");
+		assert(streq(log.circle[0].entries.ptr[0].str, STR("back to first circle")));
+		assert(streq(log.circle[1].entries.ptr[0].str, STR("second circle")));
+		assert(streq(log.circle[1].entries.ptr[1].str, STR("second circle 2")));
+
+		assert(log.circle[0].entries.len == 1);		
+		assert(log.circle[1].entries.len == 2);		
+	}
 }}
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
@@ -99,7 +133,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	Strslice cmdLineArguments = parseCommandLine(arena, (Str) {lpCmdLine, strlen(lpCmdLine)});
 	unused(cmdLineArguments);
 
-	commonInit(arena);
+	gameInit(arena);
 	// int oldtime = Sys_Milliseconds ();
 
     // NOTE main window message loop
