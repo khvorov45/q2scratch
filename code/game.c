@@ -109,6 +109,13 @@ static void endTempMemory(TempMemory* temp) {
     *temp = (TempMemory) {};
 }
 
+static void keepTempMemory(TempMemory* temp) {
+    assert(temp->usedBefore <= temp->arena->used);
+    assert(temp->tempBefore == temp->arena->tempCount - 1);
+    temp->arena->tempCount -= 1;
+    *temp = (TempMemory) {};
+}
+
 static bool memeq(void* ptr1, void* ptr2, i64 len) {
     int memcmpResult = memcmp(ptr1, ptr2, len);
     bool result = memcmpResult == 0;
@@ -308,15 +315,29 @@ static LogEntry* currentEntry(LogChoronologicalIter* iter) {
 }
 
 //
+// SECTION Platform API
+//
+
+typedef enum Status {
+    Status_Ok,
+    Status_Error,
+} Status;
+
+typedef struct ReadResult {
+    Status status;
+    u8slice file;
+} ReadResult;
+
+typedef struct Platform {
+    ReadResult (*readEntireFile)(Arena* arena, Str filepath);
+} Platform;
+
+//
 // SECTION Commands
 //
 
-typedef struct CommandProcData {
-    struct Commands* cmds;
-    Log* log;
-} CommandProcData;
-
-typedef void (*CommandProc)(CommandProcData*);
+struct CommandData;
+typedef void (*CommandProc)(struct CommandData*);
 
 typedef struct Command {
 	CommandProc proc;
@@ -356,47 +377,81 @@ static CommandVar* commandVarsFindByName(CommandVars* vars, Str varname) {
 	return result;
 }
 
-#define addCommand(log, cmds, vars, name) addCommand_(log, cmds, vars, STR(STRINGIFY(name)), name);
-static void addCommand_(Log* log, Commands* cmds, CommandVars* vars, Str name, CommandProc function) {
-    if (cmds->len < cmds->cap) {
-        if (commandVarsFindByName(vars, name) == 0) {
-            if (commandsFindByName(cmds, name) == 0) {
+typedef struct CommandData {
+    Commands cmds;
+    CommandVars vars;
+    Strslice args;
+    Arena executeArena;
+    Log* log;
+    Platform* platform;
+} CommandData;
+
+static CommandData createCommandData(Arena* arena, i64 maxCmds, i64 maxVars, Log* log, Platform* platform) {
+    CommandData cmdData = {
+        .cmds = (Commands) arenaAllocDynarr(arena, Command, maxCmds),
+        .vars = (CommandVars) arenaAllocDynarr(arena, CommandVar, maxVars),
+        .executeArena = arenaFromArena(arena, 1 * Megabyte),
+        .log = log,
+        .platform = platform
+    };
+    return cmdData;
+}
+
+#define addCommand(data, name) addCommand_(data, STR(STRINGIFY(name)), name);
+static void addCommand_(CommandData* data, Str name, CommandProc function) {
+    if (data->cmds.len < data->cmds.cap) {
+        if (commandVarsFindByName(&data->vars, name) == 0) {
+            if (commandsFindByName(&data->cmds, name) == 0) {
                 Command entry = {.proc = function, .name = name};
-                dynarrpush(cmds, entry);
+                dynarrpush(&data->cmds, entry);
             } else {
-                addLogEntry(log, LogEntryCategory_Error, "addCommand: %*s already defined\n", LIT(name));
+                addLogEntry(data->log, LogEntryCategory_Error, "addCommand: %*s already defined", LIT(name));
             }
         } else {
-            addLogEntry(log, LogEntryCategory_Error, "addCommand: %*s already defined as a var\n", LIT(name));
+            addLogEntry(data->log, LogEntryCategory_Error, "addCommand: %*s already defined as a var", LIT(name));
         }
     } else {
-        addLogEntry(log, LogEntryCategory_Error, "addCommand: %*s could not be added, buffer full\n", LIT(name));
+        addLogEntry(data->log, LogEntryCategory_Error, "addCommand: %*s could not be added, buffer full", LIT(name));
     }
 }
 
-static void cmdlist(CommandProcData* data) {
-	for (i64 index = 0; index < data->cmds->len; index++) {
-        Command entry = data->cmds->ptr[index];
-		addLogEntry(data->log, LogEntryCategory_Ok, "%*s\n", LIT(entry.name));
+static void cmdlist(CommandData* data) {
+	for (i64 index = 0; index < data->cmds.len; index++) {
+        Command entry = data->cmds.ptr[index];
+		addLogEntry(data->log, LogEntryCategory_Ok, "%*s", LIT(entry.name));
 	}
-	addLogEntry(data->log, LogEntryCategory_Ok, "%lli commands\n", data->cmds->len);
+	addLogEntry(data->log, LogEntryCategory_Ok, "%lli commands", data->cmds.len);
+}
+
+static void cmdexec(CommandData* data) {
+	if (data->args.len == 2) {
+        assert(data->platform->readEntireFile);
+        assert(data->executeArena.base);
+        Str filename = data->args.ptr[1];
+        ReadResult readResult = data->platform->readEntireFile(&data->executeArena, filename);
+        if (readResult.status == Status_Ok) {
+            addLogEntry(data->log, LogEntryCategory_Ok, "execing %*s", LIT(filename));
+        } else {
+            addLogEntry(data->log, LogEntryCategory_Error, "couldn't exec %*s", LIT(filename));
+        }
+    } else {
+		addLogEntry(data->log, LogEntryCategory_Ok, "exec <filename> : execute a script file");
+    }
 }
 
 //
 // SECTION Init
 //
 
-static void gameInit(Arena* arena) {
+static void gameInit(Arena* arena, Platform* platform) {
     Log* log = arenaAllocAndZeroArray(arena, Log, 1);
-    Commands* cmds = arenaAllocAndZeroArray(arena, Commands, 1);
-	CommandVars* vars = arenaAllocAndZeroArray(arena, CommandVars, 1);
-
     *log = createLog(arena, 2, 1024, 8 * Kilobyte);
-	*cmds = (Commands) arenaAllocDynarr(arena, Command, 1024);
-    *vars = (CommandVars) arenaAllocDynarr(arena, CommandVar, 1024);
 
-	addCommand(log, cmds, vars, cmdlist);
-	// addCommand(STR("exec"), Cmd_Exec_f);
+    CommandData* cmdData = arenaAllocAndZeroArray(arena, CommandData, 1);
+    *cmdData = createCommandData(arena, 1024, 1024, log, platform);
+
+	addCommand(cmdData, cmdlist);
+	addCommand(cmdData, cmdexec);
 	// addCommand(STR("echo"), Cmd_Echo_f);
 	// addCommand(STR("alias"), Cmd_Alias_f);
 	// addCommand(STR("wait"), Cmd_Wait_f);
