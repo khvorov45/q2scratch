@@ -498,7 +498,7 @@ static void gameInit(Arena* arena, Platform* platform) {
 
 	addCommand(cmdData, cmdlist);
 	addCommand(cmdData, cmdexec);
-	// addCommand(STR("echo"), Cmd_Echo_f);
+	addCommand(cmdData, cmdecho);
 	// addCommand(STR("alias"), Cmd_Alias_f);
 	// addCommand(STR("wait"), Cmd_Wait_f);
 // 	Cvar_Init ();
