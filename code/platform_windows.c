@@ -1,4 +1,4 @@
-#include "common.c"
+#include "game.c"
 
 #include <windows.h>
 
@@ -84,37 +84,90 @@ static void allTests_(Arena* arena) {tempMemoryBlock(arena) {
 	}
 
 	{
-		Log log = {};
-		initLog(&log, arena, 2, 8 * Kilobyte);
+		Log log = createLog(arena, 2, 2, 8 * Kilobyte);
 
 		addLogEntry(&log, LogEntryCategory_Ok, "test");
-		assert(streq(log.circle[0].entries.ptr[0].str, STR("test")));
+		assert(streq(log.circle.ptr[0].entries.ptr[0].str, STR("test")));
 
 		addLogEntry(&log, LogEntryCategory_Ok, "test %i", 123);
-		assert(streq(log.circle[0].entries.ptr[0].str, STR("test")));
-		assert(streq(log.circle[0].entries.ptr[1].str, STR("test 123")));
+		assert(streq(log.circle.ptr[0].entries.ptr[0].str, STR("test")));
+		assert(streq(log.circle.ptr[0].entries.ptr[1].str, STR("test 123")));
 
-		assert(log.circle[0].entries.ptr[0].time < log.circle[0].entries.ptr[1].time);
-		assert(log.circle[0].entries.len == 2);
+		assert(log.circle.ptr[0].entries.ptr[0].time < log.circle.ptr[0].entries.ptr[1].time);
+		assert(log.circle.ptr[0].entries.len == 2);
 		
 		addLogEntry(&log, LogEntryCategory_Ok, "second circle");
-		assert(streq(log.circle[0].entries.ptr[0].str, STR("test")));
-		assert(streq(log.circle[0].entries.ptr[1].str, STR("test 123")));
-		assert(streq(log.circle[1].entries.ptr[0].str, STR("second circle")));
+		assert(streq(log.circle.ptr[0].entries.ptr[0].str, STR("test")));
+		assert(streq(log.circle.ptr[0].entries.ptr[1].str, STR("test 123")));
+		assert(streq(log.circle.ptr[1].entries.ptr[0].str, STR("second circle")));
 
 		addLogEntry(&log, LogEntryCategory_Ok, "second circle 2");
-		assert(streq(log.circle[0].entries.ptr[0].str, STR("test")));
-		assert(streq(log.circle[0].entries.ptr[1].str, STR("test 123")));
-		assert(streq(log.circle[1].entries.ptr[0].str, STR("second circle")));
-		assert(streq(log.circle[1].entries.ptr[1].str, STR("second circle 2")));
+		assert(streq(log.circle.ptr[0].entries.ptr[0].str, STR("test")));
+		assert(streq(log.circle.ptr[0].entries.ptr[1].str, STR("test 123")));
+		assert(streq(log.circle.ptr[1].entries.ptr[0].str, STR("second circle")));
+		assert(streq(log.circle.ptr[1].entries.ptr[1].str, STR("second circle 2")));
 
 		addLogEntry(&log, LogEntryCategory_Ok, "back to first circle");
-		assert(streq(log.circle[0].entries.ptr[0].str, STR("back to first circle")));
-		assert(streq(log.circle[1].entries.ptr[0].str, STR("second circle")));
-		assert(streq(log.circle[1].entries.ptr[1].str, STR("second circle 2")));
+		assert(streq(log.circle.ptr[0].entries.ptr[0].str, STR("back to first circle")));
+		assert(streq(log.circle.ptr[1].entries.ptr[0].str, STR("second circle")));
+		assert(streq(log.circle.ptr[1].entries.ptr[1].str, STR("second circle 2")));
 
-		assert(log.circle[0].entries.len == 1);		
-		assert(log.circle[1].entries.len == 2);		
+		assert(log.circle.ptr[0].entries.len == 1);		
+		assert(log.circle.ptr[1].entries.len == 2);		
+	}
+
+	{
+		Log log = createLog(arena, 3, 3, 8 * Kilobyte);
+
+		addLogEntry(&log, LogEntryCategory_Ok, "entry1");
+		addLogEntry(&log, LogEntryCategory_Ok, "entry2");
+		addLogEntry(&log, LogEntryCategory_Ok, "entry3");
+		addLogEntry(&log, LogEntryCategory_Ok, "entry4");
+		addLogEntry(&log, LogEntryCategory_Ok, "entry5");
+		addLogEntry(&log, LogEntryCategory_Ok, "entry6");
+		addLogEntry(&log, LogEntryCategory_Ok, "entry7");
+		addLogEntry(&log, LogEntryCategory_Ok, "entry8");
+		
+		LogChoronologicalIter iter = chronologicalIter(&log);
+		assert(streq(currentEntry(&iter)->str, STR("entry1")));
+		chronologicalIterNext(&iter);
+		assert(streq(currentEntry(&iter)->str, STR("entry2")));
+		chronologicalIterNext(&iter);
+		assert(streq(currentEntry(&iter)->str, STR("entry3")));
+		chronologicalIterNext(&iter);
+		assert(streq(currentEntry(&iter)->str, STR("entry4")));
+		chronologicalIterNext(&iter);
+		assert(streq(currentEntry(&iter)->str, STR("entry5")));
+		chronologicalIterNext(&iter);
+		assert(streq(currentEntry(&iter)->str, STR("entry6")));
+		chronologicalIterNext(&iter);
+		assert(streq(currentEntry(&iter)->str, STR("entry7")));
+		chronologicalIterNext(&iter);
+		assert(streq(currentEntry(&iter)->str, STR("entry8")));
+		assert(iter.ended);
+
+		// NOTE: Should not crash
+		chronologicalIterNext(&iter);
+		chronologicalIterNext(&iter);
+
+		addLogEntry(&log, LogEntryCategory_Ok, "entry9");
+		addLogEntry(&log, LogEntryCategory_Ok, "entry10");
+		iter = chronologicalIter(&log);
+		assert(streq(currentEntry(&iter)->str, STR("entry4")));
+		chronologicalIterNext(&iter);
+		assert(streq(currentEntry(&iter)->str, STR("entry5")));
+		chronologicalIterNext(&iter);
+		assert(streq(currentEntry(&iter)->str, STR("entry6")));
+		chronologicalIterNext(&iter);
+		assert(streq(currentEntry(&iter)->str, STR("entry7")));
+		chronologicalIterNext(&iter);
+		assert(streq(currentEntry(&iter)->str, STR("entry8")));
+		chronologicalIterNext(&iter);
+		assert(streq(currentEntry(&iter)->str, STR("entry9")));
+		chronologicalIterNext(&iter);
+		assert(streq(currentEntry(&iter)->str, STR("entry10")));
+		assert(iter.ended);
+
 	}
 }}
 

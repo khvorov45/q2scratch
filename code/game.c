@@ -214,31 +214,40 @@ typedef struct LogEntry {
 } LogEntry;
 typedef struct LogEntries {LogEntry* ptr; i64 len; i64 cap;} LogEntries;
 
+typedef struct LogSubBuffer {
+    LogEntries entries;
+    Arena arena;
+} LogSubBuffer;
+typedef struct LogSubBuffers {LogSubBuffer* ptr; i64 len;} LogSubBuffers;
+
 typedef struct Log {
-    struct {
-        LogEntries entries;
-        Arena arena;
-    } circle[2];
+    LogSubBuffers circle;
     i64 currentIndex;
 } Log;
 
-static void initLog(Log* log, Arena* arena, i64 maxEntryCount, i64 stringBufferSize) {
-    for (i64 index = 0; index < (i64)carrayCount(log->circle); index++) {
-        log->circle[index].entries = (LogEntries) arenaAllocDynarr(arena, LogEntry, maxEntryCount);
-        log->circle[index].arena = arenaFromArena(arena, stringBufferSize);
+static Log createLog(Arena* arena, i64 numSubBuffers, i64 maxEntryCountInEachSubbuffer, i64 stringBufferSizeInEachSubbuffer) {
+    Log log = {};
+    log.circle.len = numSubBuffers;
+    log.circle.ptr = arenaAllocAndZeroArray(arena, LogSubBuffer, log.circle.len);
+    for (i64 index = 0; index < log.circle.len; index++) {
+        log.circle.ptr[index].entries = (LogEntries) arenaAllocDynarr(arena, LogEntry, maxEntryCountInEachSubbuffer);
+        log.circle.ptr[index].arena = arenaFromArena(arena, stringBufferSizeInEachSubbuffer);
     }
+    return log;
 }
 
 __attribute__((format(printf,3,4)))
-static void addLogEntry(Log* log_, LogEntryCategory category, char* fmt, ...) {
-    LogEntries* entries = &log_->circle[log_->currentIndex].entries;
-    Arena* arena = &log_->circle[log_->currentIndex].arena;
+static void addLogEntry(Log* log, LogEntryCategory category, char* fmt, ...) {
+    assert(log->currentIndex >= 0 && log->currentIndex < log->circle.len);
+
+    LogEntries* entries = &log->circle.ptr[log->currentIndex].entries;
+    Arena* arena = &log->circle.ptr[log->currentIndex].arena;
 
     i64 maxExpectedSizeForALogEntry = 300;
     if (entries->len >= entries->cap || arenaFreesize(arena) < maxExpectedSizeForALogEntry) {
-        log_->currentIndex = (log_->currentIndex + 1) % carrayCount(log_->circle);
-        entries = &log_->circle[log_->currentIndex].entries;
-        arena = &log_->circle[log_->currentIndex].arena;
+        log->currentIndex = (log->currentIndex + 1) % log->circle.len;
+        entries = &log->circle.ptr[log->currentIndex].entries;
+        arena = &log->circle.ptr[log->currentIndex].arena;
         arena->used = 0;
         entries->len = 0;
     }
@@ -264,11 +273,50 @@ static void addLogEntry(Log* log_, LogEntryCategory category, char* fmt, ...) {
     dynarrpush(entries, entry);
 }
 
+typedef struct LogChoronologicalIter {
+    Log* log;
+    i64 currentCircle;
+    i64 currentEntryInCurrentCircle;
+    bool ended;
+} LogChoronologicalIter;
+
+static LogChoronologicalIter chronologicalIter(Log* log) {
+    LogChoronologicalIter iter = {.log = log, .currentCircle = (log->currentIndex + 1) % log->circle.len, .currentEntryInCurrentCircle = 0};
+    return iter;
+}
+
+static void chronologicalIterNext(LogChoronologicalIter* iter) {
+    if (!iter->ended) {
+        iter->currentEntryInCurrentCircle += 1;
+        bool currentCircleIsDone = iter->currentEntryInCurrentCircle == iter->log->circle.ptr[iter->currentCircle].entries.len;
+        if (currentCircleIsDone) {
+            iter->currentEntryInCurrentCircle = 0;
+            iter->currentCircle = (iter->currentCircle + 1) % iter->log->circle.len;
+        }
+        bool thisCircleIsLastCircle = iter->currentCircle == iter->log->currentIndex;
+        bool thisEntryIsLastEntry = iter->currentEntryInCurrentCircle == iter->log->circle.ptr[iter->currentCircle].entries.len - 1;
+        iter->ended = thisCircleIsLastCircle && thisEntryIsLastEntry;
+    }
+}
+
+static LogEntry* currentEntry(LogChoronologicalIter* iter) {
+    assert(iter->currentCircle >= 0 && iter->currentCircle < iter->log->circle.len);
+    LogSubBuffer* currentCircle = iter->log->circle.ptr + iter->currentCircle;
+    assert(iter->currentEntryInCurrentCircle >= 0 && iter->currentEntryInCurrentCircle < currentCircle->entries.len);
+    LogEntry* result = currentCircle->entries.ptr + iter->currentEntryInCurrentCircle;
+    return result;
+}
+
 //
 // SECTION Commands
 //
 
-typedef void (*CommandProc)(void*);
+typedef struct CommandProcData {
+    struct Commands* cmds;
+    Log* log;
+} CommandProcData;
+
+typedef void (*CommandProc)(CommandProcData*);
 
 typedef struct Command {
 	CommandProc proc;
@@ -308,7 +356,7 @@ static CommandVar* commandVarsFindByName(CommandVars* vars, Str varname) {
 	return result;
 }
 
-#define addCommand(log, cmds, vars, name) addCommand_(log, cmds, vars, STR(STRINGIFY(name)), (CommandProc)name);
+#define addCommand(log, cmds, vars, name) addCommand_(log, cmds, vars, STR(STRINGIFY(name)), name);
 static void addCommand_(Log* log, Commands* cmds, CommandVars* vars, Str name, CommandProc function) {
     if (cmds->len < cmds->cap) {
         if (commandVarsFindByName(vars, name) == 0) {
@@ -326,21 +374,24 @@ static void addCommand_(Log* log, Commands* cmds, CommandVars* vars, Str name, C
     }
 }
 
-static void cmdlist(Commands* cmds) {
-	for (i64 index = 0; index < cmds->len; index++) {
-        Command entry = cmds->ptr[index];
-        unused(entry);
-		// Com_Printf ("%s\n", cmd->name);
+static void cmdlist(CommandProcData* data) {
+	for (i64 index = 0; index < data->cmds->len; index++) {
+        Command entry = data->cmds->ptr[index];
+		addLogEntry(data->log, LogEntryCategory_Ok, "%*s\n", LIT(entry.name));
 	}
-	// Com_Printf ("%i commands\n", i);
+	addLogEntry(data->log, LogEntryCategory_Ok, "%lli commands\n", data->cmds->len);
 }
+
+//
+// SECTION Init
+//
 
 static void gameInit(Arena* arena) {
     Log* log = arenaAllocAndZeroArray(arena, Log, 1);
     Commands* cmds = arenaAllocAndZeroArray(arena, Commands, 1);
 	CommandVars* vars = arenaAllocAndZeroArray(arena, CommandVars, 1);
 
-    initLog(log, arena, 1024, 8 * Kilobyte);
+    *log = createLog(arena, 2, 1024, 8 * Kilobyte);
 	*cmds = (Commands) arenaAllocDynarr(arena, Command, 1024);
     *vars = (CommandVars) arenaAllocDynarr(arena, CommandVar, 1024);
 
