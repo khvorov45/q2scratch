@@ -157,17 +157,50 @@ static bool strsliceeq(Strslice slice1, Strslice slice2) {
     return result;
 }
 
-__attribute__((format(printf,2,3)))
-static Str strfmt(Arena* arena, char* fmt, ...) {
-    char* out = arenaFreeptr(arena);
+typedef struct StrBuilder {
+    Arena* arena;
+    char* start;
+} StrBuilder;
 
+static StrBuilder beginStr(Arena* arena) {
+    StrBuilder builder = {.arena = arena, .start = arenaFreeptr(arena)};
+    return builder;
+}
+
+static void addToStr_(StrBuilder* builder, char* fmt, va_list args) {
+    char* out = arenaFreeptr(builder->arena);
+    int printResult = stbsp_vsnprintf(out, arenaFreesize(builder->arena), fmt, args);
+    builder->arena->used += printResult;
+}
+
+__attribute__((format(printf,2,3)))
+static void addToStr(StrBuilder* builder, char* fmt, ...) {
     va_list va;
     va_start(va, fmt);
-    int printResult = stbsp_vsnprintf(out, arenaFreesize(arena), fmt, va);
+    addToStr_(builder, fmt, va);
     va_end(va);
+}
 
-    arena->used += printResult + 1;
-    Str result = {out, printResult};
+static Str endStr(StrBuilder* builder) {
+    Str str = {.ptr = builder->start, .len = (i64)((u64)arenaFreeptr(builder->arena) - (u64)builder->start)};
+    arenaAllocAndZero(builder->arena, 1);
+    *builder = (StrBuilder) {};
+    return str;
+}
+
+static Str strfmt_(Arena* arena, char* fmt, va_list args) {
+    StrBuilder builder = beginStr(arena);
+    addToStr_(&builder, fmt, args);
+    Str result = endStr(&builder);
+    return result;
+}
+
+__attribute__((format(printf,2,3)))
+static Str strfmt(Arena* arena, char* fmt, ...) {
+    va_list va;
+    va_start(va, fmt);
+    Str result = strfmt_(arena, fmt, va);
+    va_end(va);
     return result;
 }
 
@@ -243,8 +276,7 @@ static Log createLog(Arena* arena, i64 numSubBuffers, i64 maxEntryCountInEachSub
     return log;
 }
 
-__attribute__((format(printf,3,4)))
-static void addLogEntry(Log* log, LogEntryCategory category, char* fmt, ...) {
+static void addLogEntry_(Log* log, LogEntryCategory category, char* fmt, va_list args) {
     assert(log->currentIndex >= 0 && log->currentIndex < log->circle.len);
 
     LogEntries* entries = &log->circle.ptr[log->currentIndex].entries;
@@ -262,22 +294,22 @@ static void addLogEntry(Log* log, LogEntryCategory category, char* fmt, ...) {
     assert(entries->len < entries->cap);
     assert(arenaFreesize(arena) >= maxExpectedSizeForALogEntry);
 
-    char* out = arenaFreeptr(arena);
-
-    va_list va;
-    va_start(va, fmt);
-    int printResult = stbsp_vsnprintf(out, arenaFreesize(arena), fmt, va);
-    va_end(va);
-
-    arena->used += printResult + 1;
-    Str entrystr = {out, printResult};
+    Str entryStr = strfmt_(arena, fmt, args);
 
     LogEntry entry = {
-        .str = entrystr,
+        .str = entryStr,
         .time = __rdtsc(),
         .category = category
     };
     dynarrpush(entries, entry);
+}
+
+__attribute__((format(printf,3,4)))
+static void addLogEntry(Log* log, LogEntryCategory category, char* fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    addLogEntry_(log, category, fmt, args);
+    va_end(args);
 }
 
 typedef struct LogChoronologicalIter {
@@ -382,6 +414,7 @@ typedef struct CommandData {
     CommandVars vars;
     Strslice args;
     Arena executeArena;
+    Arena scratch;
     Log* log;
     Platform* platform;
 } CommandData;
@@ -391,6 +424,7 @@ static CommandData createCommandData(Arena* arena, i64 maxCmds, i64 maxVars, Log
         .cmds = (Commands) arenaAllocDynarr(arena, Command, maxCmds),
         .vars = (CommandVars) arenaAllocDynarr(arena, CommandVar, maxVars),
         .executeArena = arenaFromArena(arena, 1 * Megabyte),
+        .scratch = arenaFromArena(arena, 1 * Megabyte),
         .log = log,
         .platform = platform
     };
@@ -436,6 +470,18 @@ static void cmdexec(CommandData* data) {
         }
     } else {
 		addLogEntry(data->log, LogEntryCategory_Ok, "exec <filename> : execute a script file");
+    }
+}
+
+static void cmdecho(CommandData* data) {
+    tempMemoryBlock(&data->scratch) {
+        StrBuilder builder = beginStr(&data->scratch);
+        for (i64 index = 1; index < data->args.len; index++) {
+            Str arg = data->args.ptr[index];
+            addToStr(&builder, "%*s ", LIT(arg));
+        }
+        Str str = endStr(&builder);
+        addLogEntry(data->log, LogEntryCategory_Ok, "%*s", LIT(str));
     }
 }
 

@@ -337,6 +337,18 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		iter.ended = false;
 		chronologicalIterNext(&iter);
 		assert(streq(currentEntry(&iter)->str, strfmt(arena, "couldn't exec %*s", LIT(tempfile))));
+
+		cmdData.args.len = 4;
+		cmdData.args.ptr = arenaAllocAndZeroArray(arena, Str, cmdData.args.len);
+		cmdData.args.ptr[0] = STR("echo");
+		cmdData.args.ptr[1] = STR("arg1");
+		cmdData.args.ptr[2] = STR("arg2");
+		cmdData.args.ptr[3] = STR("arg3");
+
+		cmdecho(&cmdData);
+		iter.ended = false;
+		chronologicalIterNext(&iter);
+		assert(streq(currentEntry(&iter)->str, STR("arg1 arg2 arg3 ")));
 	}
 }}
 
