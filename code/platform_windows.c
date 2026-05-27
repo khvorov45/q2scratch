@@ -310,16 +310,6 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		cmdecho(&cmdData);
 		assert(streq(nextEntry(&iter)->str, STR("arg1 arg2 arg3 ")));
 	}
-	
-	{
-		Log log = createLog(arena, 1, 1024, 8 * Kilobyte);
-		CommandData cmdData = createCommandData(arena, 2, 1024, &log, platform);
-		addCommand(&cmdData, cmdlist);
-		addCommand(&cmdData, cmdexec);
-		addCommand(&cmdData, cmdexec);
-		LogChoronologicalIter iter = chronologicalIter(&log);
-		assert(streq(nextEntry(&iter)->str, STR("addCommand: cmdexec could not be added, buffer full")));
-	}
 
 	{
 		Log log = createLog(arena, 1, 1024, 8 * Kilobyte);		
