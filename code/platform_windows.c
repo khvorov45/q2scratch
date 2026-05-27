@@ -215,7 +215,7 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		assert(streq(currentEntry(&iter)->str, STR("entry7")));
 		chronologicalIterNext(&iter);
 		assert(streq(currentEntry(&iter)->str, STR("entry8")));
-		assert(iter.ended);
+		assert(chronologicalIterEnded(&iter));
 
 		// NOTE: Should not crash
 		chronologicalIterNext(&iter);
@@ -237,7 +237,7 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		assert(streq(currentEntry(&iter)->str, STR("entry9")));
 		chronologicalIterNext(&iter);
 		assert(streq(currentEntry(&iter)->str, STR("entry10")));
-		assert(iter.ended);
+		assert(chronologicalIterEnded(&iter));
 	}
 
 	{
@@ -263,13 +263,11 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		chronologicalIterNext(&iter);
 		assert(streq(currentEntry(&iter)->str, STR("1 commands")));
 
-		iter.ended = false;
 		addCommand(&cmdData, cmdlist);
 		assert(streq(currentEntry(&iter)->str, STR("1 commands")));
 		chronologicalIterNext(&iter);
 		assert(streq(currentEntry(&iter)->str, STR("addCommand: cmdlist already defined")));
 
-		iter.ended = false;
 		addCommand(&cmdData, cmdlist);
 		chronologicalIterNext(&iter);
 		assert(streq(currentEntry(&iter)->str, STR("addCommand: cmdlist already defined")));
@@ -277,7 +275,6 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		CommandVar cmdVar = {.name = STR("cmdexec")};
 		dynarrpush(&cmdData.vars, cmdVar);
 
-		iter.ended = false;
 		addCommand(&cmdData, cmdexec);
 		chronologicalIterNext(&iter);
 		assert(streq(currentEntry(&iter)->str, STR("addCommand: cmdexec already defined as a var")));
@@ -290,13 +287,11 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		assert(cmdData.cmds.len == 2);
 		assert(streq(cmdData.cmds.ptr[1].name, STR("cmdexec")));
 
-		iter.ended = false;
 		addCommand(&cmdData, cmdexec);
 		chronologicalIterNext(&iter);
 		assert(streq(currentEntry(&iter)->str, STR("addCommand: cmdexec could not be added, buffer full")));
 
 		cmdlist(&cmdData);
-		iter.ended = false;
 		chronologicalIterNext(&iter);
 		assert(streq(currentEntry(&iter)->str, STR("cmdlist")));
 		chronologicalIterNext(&iter);
@@ -305,7 +300,6 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		assert(streq(currentEntry(&iter)->str, STR("2 commands")));
 
 		cmdexec(&cmdData);
-		iter.ended = false;
 		chronologicalIterNext(&iter);
 		assert(streq(currentEntry(&iter)->str, STR("exec <filename> : execute a script file")));
 
@@ -318,14 +312,12 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 
 		cmdData.args.ptr[1] = tempfile;
 		cmdexec(&cmdData);
-		iter.ended = false;
 		chronologicalIterNext(&iter);
 		assert(streq(currentEntry(&iter)->str, strfmt(arena, "execing %*s", LIT(tempfile))));
 
 		assert(deleteFile(arena, tempfile) == Status_Ok);
 
 		cmdexec(&cmdData);
-		iter.ended = false;
 		chronologicalIterNext(&iter);
 		assert(streq(currentEntry(&iter)->str, strfmt(arena, "couldn't exec %*s", LIT(tempfile))));
 
@@ -337,7 +329,6 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		cmdData.args.ptr[3] = STR("arg3");
 
 		cmdecho(&cmdData);
-		iter.ended = false;
 		chronologicalIterNext(&iter);
 		assert(streq(currentEntry(&iter)->str, STR("arg1 arg2 arg3 ")));
 	}

@@ -282,7 +282,6 @@ typedef struct LogChoronologicalIter {
     Log* log;
     i64 currentCircle;
     i64 currentEntryInCurrentCircle;
-    bool ended;
 } LogChoronologicalIter;
 
 static LogChoronologicalIter chronologicalIter(Log* log) {
@@ -290,17 +289,21 @@ static LogChoronologicalIter chronologicalIter(Log* log) {
     return iter;
 }
 
+static bool chronologicalIterEnded(LogChoronologicalIter* iter) {
+    bool currentCircleIsMostRecent = iter->currentCircle == iter->log->currentIndex;
+    bool currentEntryInCircleIsMostRecent = iter->currentEntryInCurrentCircle >= iter->log->circle.ptr[iter->currentCircle].entries.len - 1;
+    bool result = currentCircleIsMostRecent && currentEntryInCircleIsMostRecent;
+    return result;
+}
+
 static void chronologicalIterNext(LogChoronologicalIter* iter) {
-    if (!iter->ended) {
+    if (!chronologicalIterEnded(iter)) {
         iter->currentEntryInCurrentCircle += 1;
         bool currentCircleIsDone = iter->currentEntryInCurrentCircle == iter->log->circle.ptr[iter->currentCircle].entries.len;
         if (currentCircleIsDone) {
             iter->currentEntryInCurrentCircle = 0;
             iter->currentCircle = (iter->currentCircle + 1) % iter->log->circle.len;
         }
-        bool thisCircleIsLastCircle = iter->currentCircle == iter->log->currentIndex;
-        bool thisEntryIsLastEntry = iter->currentEntryInCurrentCircle == iter->log->circle.ptr[iter->currentCircle].entries.len - 1;
-        iter->ended = thisCircleIsLastCircle && thisEntryIsLastEntry;
     }
 }
 
