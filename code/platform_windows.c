@@ -9,35 +9,26 @@
 //
 
 static Strslice parseCommandLine(Arena* arena, Str cmdline) {
-	Strslice cmdLineArguments = {.len = 1}; // NOTE: the first one is the executable
+	Str* argsSliceStart = arenaAllocAndZeroArray(arena, Str, 1);
+	*argsSliceStart = STR("exe");
 
-	StrIter iterNoLeadingWhitespace = {};
-	{
-		StrIter iter = striter(cmdline);
-		striterAdvancePastWhitespace(&iter);
-		iterNoLeadingWhitespace = iter;
-
-		// NOTE(khvorov) Count
-		for (;!striterEnded(&iter);) {
-			striterAdvanceUntilWhitespace(&iter);
-			striterAdvancePastWhitespace(&iter);
-			cmdLineArguments.len++;
+	i64 numArgsInCmdline = 1;
+	i64 charIndex = 0;
+	while (charIndex < cmdline.len) {
+		while (charIndex < cmdline.len && isspace(cmdline.ptr[charIndex])) {charIndex++;}
+		char* argStart = cmdline.ptr + charIndex;
+		while (charIndex < cmdline.len && !isspace(cmdline.ptr[charIndex])) {charIndex++;}
+		char* argEnd = cmdline.ptr + charIndex;
+		Str arg = {.ptr = argStart, .len = argEnd - argStart};
+		if (arg.len > 0) {
+			Str* entry = arenaAllocAndZeroArray(arena, Str, 1);
+			*entry = arg;
+			numArgsInCmdline += 1;
 		}
 	}
 
-	// NOTE(khvorov) Allocate array
-	cmdLineArguments.ptr = arenaAllocAndZeroArray(arena, Str, cmdLineArguments.len);
-	cmdLineArguments.ptr[0] = STR("exe");
-	i64 curArgIndex = 1;
-	for (;!striterEnded(&iterNoLeadingWhitespace);) {
-		striterAdvancePastWhitespace(&iterNoLeadingWhitespace);
-		char* argStart = iterNoLeadingWhitespace.cur.ptr;
-		striterAdvanceUntilWhitespace(&iterNoLeadingWhitespace);
-		cmdLineArguments.ptr[curArgIndex++] = (Str) {.ptr = argStart, .len = iterNoLeadingWhitespace.cur.ptr - argStart};
-		striterAdvancePastWhitespace(&iterNoLeadingWhitespace);
-	}
-
-	return cmdLineArguments;
+	Strslice result = {.ptr = argsSliceStart, .len = numArgsInCmdline};
+	return result;
 }
 
 static void ShowErrorMsgBoxAndExit(Str errorMsg) {

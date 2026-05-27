@@ -204,40 +204,6 @@ static Str strfmt(Arena* arena, char* fmt, ...) {
     return result;
 }
 
-typedef struct StrIter {
-	Str cur;
-} StrIter;
-
-static StrIter striter(Str str) {
-	if (str.len > 0) assert(str.ptr);
-	StrIter iter = {.cur = str};
-	return iter;
-}
-
-static bool striterEnded(StrIter* iter) {
-	bool result = iter->cur.len == 0;
-	return result;
-}
-
-static void striterAdvanceOne(StrIter* iter) {
-	if (!striterEnded(iter)) {
-		iter->cur.ptr++;
-		iter->cur.len--;
-	}
-}
-
-static void striterAdvanceUntilWhitespace(StrIter* iter) {
-    while (!striterEnded(iter) && !isspace(*iter->cur.ptr)) {
-        striterAdvanceOne(iter);
-    }
-}
-
-static void striterAdvancePastWhitespace(StrIter* iter) {
-    while (!striterEnded(iter) && isspace(*iter->cur.ptr)) {
-        striterAdvanceOne(iter);
-    }
-}
-
 //
 // SECTION Logging
 //
