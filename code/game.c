@@ -341,21 +341,10 @@ struct CommandData;
 typedef void (*CommandProc)(struct CommandData*);
 
 typedef struct Command {
-	CommandProc proc;
 	Str name;
+    CommandProc proc;
 } Command;
 typedef struct Commands {Command* ptr; i64 len; i64 cap;} Commands;
-
-static Command* commandsFindByName(Commands* cmds, Str cmdname) {
-    Command* result = 0;
-	for (i64 index = 0; index < cmds->len && !result; index++) {
-        Command* var = cmds->ptr + index;
-		if (streq(cmdname, var->name)) {
-			result = var;
-        }
-    }
-	return result;
-}
 
 typedef struct CommandVar {
 	Str name;
@@ -367,12 +356,14 @@ typedef struct CommandVar {
 } CommandVar;
 typedef struct CommandVars {CommandVar* ptr; i64 len; i64 cap;} CommandVars;
 
-static CommandVar* commandVarsFindByName(CommandVars* vars, Str varname) {
-    CommandVar* result = 0;
-	for (i64 index = 0; index < vars->len && !result; index++) {
-        CommandVar* var = vars->ptr + index;
-		if (streq(varname, var->name)) {
-			result = var;
+_STATIC_ASSERT(offsetof(Command, name) == 0 || offsetof(CommandVar, name) != 0);
+#define findByName(slice, name) findByName_(slice.ptr, slice.len, name, sizeof(slice.ptr[0]))
+static void* findByName_(void* ptr, i64 len, Str name, i64 sizeOfOneEntry) {
+    void* result = 0;
+	for (i64 byteIndex = 0; byteIndex < len * sizeOfOneEntry && !result; byteIndex += sizeOfOneEntry) {
+        Str* thisName = (Str*)(ptr + byteIndex);
+		if (streq(*thisName, name)) {
+			result = thisName;
         }
     }
 	return result;
@@ -403,8 +394,8 @@ static CommandData createCommandData(Arena* arena, i64 maxCmds, i64 maxVars, Log
 #define addCommand(data, name) addCommand_(data, STR(STRINGIFY(name)), name);
 static void addCommand_(CommandData* data, Str name, CommandProc function) {
     if (data->cmds.len < data->cmds.cap) {
-        if (commandVarsFindByName(&data->vars, name) == 0) {
-            if (commandsFindByName(&data->cmds, name) == 0) {
+        if (findByName(data->vars, name) == 0) {
+            if (findByName(data->cmds, name) == 0) {
                 Command entry = {.proc = function, .name = name};
                 dynarrpush(&data->cmds, entry);
             } else {

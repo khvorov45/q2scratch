@@ -244,7 +244,7 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		Log log = createLog(arena, 1, 1024, 8 * Kilobyte);
 		LogEntries* logents = &log.circle.ptr[0].entries;
 
-		CommandData cmdData = createCommandData(arena, 2, 1024, &log, platform);
+		CommandData cmdData = createCommandData(arena, 3, 1024, &log, platform);
 
 		assert(logents->len == 0);
 		cmdlist(&cmdData);
@@ -272,8 +272,10 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		chronologicalIterNext(&iter);
 		assert(streq(currentEntry(&iter)->str, STR("addCommand: cmdlist already defined")));
 
-		CommandVar cmdVar = {.name = STR("cmdexec")};
-		dynarrpush(&cmdData.vars, cmdVar);
+		CommandVar cmdVar1 = {.name = STR("cmdVar1")};
+		CommandVar cmdVar2 = {.name = STR("cmdexec")};
+		dynarrpush(&cmdData.vars, cmdVar1);
+		dynarrpush(&cmdData.vars, cmdVar2);
 
 		addCommand(&cmdData, cmdexec);
 		chronologicalIterNext(&iter);
@@ -287,10 +289,6 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		assert(cmdData.cmds.len == 2);
 		assert(streq(cmdData.cmds.ptr[1].name, STR("cmdexec")));
 
-		addCommand(&cmdData, cmdexec);
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("addCommand: cmdexec could not be added, buffer full")));
-
 		cmdlist(&cmdData);
 		chronologicalIterNext(&iter);
 		assert(streq(currentEntry(&iter)->str, STR("cmdlist")));
@@ -298,6 +296,10 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		assert(streq(currentEntry(&iter)->str, STR("cmdexec")));
 		chronologicalIterNext(&iter);
 		assert(streq(currentEntry(&iter)->str, STR("2 commands")));
+
+		addCommand(&cmdData, cmdexec);
+		chronologicalIterNext(&iter);
+		assert(streq(currentEntry(&iter)->str, STR("addCommand: cmdexec already defined")));
 
 		cmdexec(&cmdData);
 		chronologicalIterNext(&iter);
@@ -331,6 +333,52 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		cmdecho(&cmdData);
 		chronologicalIterNext(&iter);
 		assert(streq(currentEntry(&iter)->str, STR("arg1 arg2 arg3 ")));
+	}
+	
+	{
+		Log log = createLog(arena, 1, 1024, 8 * Kilobyte);
+		CommandData cmdData = createCommandData(arena, 2, 1024, &log, platform);
+		addCommand(&cmdData, cmdlist);
+		addCommand(&cmdData, cmdexec);
+		addCommand(&cmdData, cmdexec);
+		LogChoronologicalIter iter = chronologicalIter(&log);
+		chronologicalIterNext(&iter);		
+		assert(streq(currentEntry(&iter)->str, STR("addCommand: cmdexec could not be added, buffer full")));
+	}
+
+	{
+		Log log = createLog(arena, 1, 1024, 8 * Kilobyte);		
+		CommandData cmdData = createCommandData(arena, 3, 3, &log, platform);
+
+		Command cmd1 = {.name = STR("cmd1")};
+		Command cmd2 = {.name = STR("cmd2")};
+		Command cmd3 = {.name = STR("cmd3")};
+		dynarrpush(&cmdData.cmds, cmd1); 
+		dynarrpush(&cmdData.cmds, cmd2); 
+		dynarrpush(&cmdData.cmds, cmd3);
+		
+		CommandVar var1 = {.name = STR("var1")};
+		CommandVar var2 = {.name = STR("var2")};
+		CommandVar var3 = {.name = STR("var3")};
+		dynarrpush(&cmdData.vars, var1); 
+		dynarrpush(&cmdData.vars, var2); 
+		dynarrpush(&cmdData.vars, var3);
+
+		assert(findByName(cmdData.cmds, STR("cmd1")));
+		assert(findByName(cmdData.cmds, STR("cmd2")));
+		assert(findByName(cmdData.cmds, STR("cmd3")));
+
+		assert(findByName(cmdData.vars, STR("var1")));
+		assert(findByName(cmdData.vars, STR("var2")));
+		assert(findByName(cmdData.vars, STR("var3")));
+
+		assert(!findByName(cmdData.cmds, STR("var1")));
+		assert(!findByName(cmdData.cmds, STR("var2")));
+		assert(!findByName(cmdData.cmds, STR("var3")));
+
+		assert(!findByName(cmdData.vars, STR("cmd1")));
+		assert(!findByName(cmdData.vars, STR("cmd2")));
+		assert(!findByName(cmdData.vars, STR("cmd3")));
 	}
 }}
 
