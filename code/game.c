@@ -289,15 +289,15 @@ static LogChoronologicalIter chronologicalIter(Log* log) {
     return iter;
 }
 
-static bool chronologicalIterEnded(LogChoronologicalIter* iter) {
+static bool ended(LogChoronologicalIter* iter) {
     bool currentCircleIsMostRecent = iter->currentCircle == iter->log->currentIndex;
     bool currentEntryInCircleIsMostRecent = iter->currentEntryInCurrentCircle >= iter->log->circle.ptr[iter->currentCircle].entries.len - 1;
     bool result = currentCircleIsMostRecent && currentEntryInCircleIsMostRecent;
     return result;
 }
 
-static void chronologicalIterNext(LogChoronologicalIter* iter) {
-    if (!chronologicalIterEnded(iter)) {
+static void advance(LogChoronologicalIter* iter) {
+    if (!ended(iter)) {
         iter->currentEntryInCurrentCircle += 1;
         bool currentCircleIsDone = iter->currentEntryInCurrentCircle == iter->log->circle.ptr[iter->currentCircle].entries.len;
         if (currentCircleIsDone) {
@@ -313,6 +313,12 @@ static LogEntry* currentEntry(LogChoronologicalIter* iter) {
     assert(iter->currentEntryInCurrentCircle >= 0 && iter->currentEntryInCurrentCircle < currentCircle->entries.len);
     LogEntry* result = currentCircle->entries.ptr + iter->currentEntryInCurrentCircle;
     return result;
+}
+
+static LogEntry* nextEntry(LogChoronologicalIter* iter) {
+    advance(iter);
+    LogEntry* entry = currentEntry(iter);
+    return entry;
 }
 
 //

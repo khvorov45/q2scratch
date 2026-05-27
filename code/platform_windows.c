@@ -201,43 +201,30 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 
 		LogChoronologicalIter iter = chronologicalIter(&log);
 		assert(streq(currentEntry(&iter)->str, STR("entry1")));
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("entry2")));
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("entry3")));
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("entry4")));
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("entry5")));
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("entry6")));
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("entry7")));
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("entry8")));
-		assert(chronologicalIterEnded(&iter));
+		assert(streq(nextEntry(&iter)->str, STR("entry2")));
+		assert(streq(nextEntry(&iter)->str, STR("entry3")));
+		assert(streq(nextEntry(&iter)->str, STR("entry4")));
+		assert(streq(nextEntry(&iter)->str, STR("entry5")));
+		assert(streq(nextEntry(&iter)->str, STR("entry6")));
+		assert(streq(nextEntry(&iter)->str, STR("entry7")));
+		assert(streq(nextEntry(&iter)->str, STR("entry8")));
+		assert(ended(&iter));
 
 		// NOTE: Should not crash
-		chronologicalIterNext(&iter);
-		chronologicalIterNext(&iter);
+		advance(&iter);
+		advance(&iter);
 
 		addLogEntry(&log, LogEntryCategory_Ok, "entry9");
 		addLogEntry(&log, LogEntryCategory_Ok, "entry10");
 		iter = chronologicalIter(&log);
 		assert(streq(currentEntry(&iter)->str, STR("entry4")));
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("entry5")));
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("entry6")));
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("entry7")));
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("entry8")));
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("entry9")));
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("entry10")));
-		assert(chronologicalIterEnded(&iter));
+		assert(streq(nextEntry(&iter)->str, STR("entry5")));
+		assert(streq(nextEntry(&iter)->str, STR("entry6")));
+		assert(streq(nextEntry(&iter)->str, STR("entry7")));
+		assert(streq(nextEntry(&iter)->str, STR("entry8")));
+		assert(streq(nextEntry(&iter)->str, STR("entry9")));
+		assert(streq(nextEntry(&iter)->str, STR("entry10")));
+		assert(ended(&iter));
 	}
 
 	{
@@ -258,19 +245,11 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		assert(streq(cmdData.cmds.ptr[0].name, STR("cmdlist")));
 		cmdlist(&cmdData);
 
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("cmdlist")));
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("1 commands")));
+		assert(streq(nextEntry(&iter)->str, STR("cmdlist")));
+		assert(streq(nextEntry(&iter)->str, STR("1 commands")));
 
 		addCommand(&cmdData, cmdlist);
-		assert(streq(currentEntry(&iter)->str, STR("1 commands")));
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("addCommand: cmdlist already defined")));
-
-		addCommand(&cmdData, cmdlist);
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("addCommand: cmdlist already defined")));
+		assert(streq(nextEntry(&iter)->str, STR("addCommand: cmdlist already defined")));
 
 		CommandVar cmdVar1 = {.name = STR("cmdVar1")};
 		CommandVar cmdVar2 = {.name = STR("cmdexec")};
@@ -278,8 +257,7 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		dynarrpush(&cmdData.vars, cmdVar2);
 
 		addCommand(&cmdData, cmdexec);
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("addCommand: cmdexec already defined as a var")));
+		assert(streq(nextEntry(&iter)->str, STR("addCommand: cmdexec already defined as a var")));
 		cmdData.vars.len = 0;
 
 		i64 logentLenBefore = logents->len;
@@ -290,20 +268,15 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		assert(streq(cmdData.cmds.ptr[1].name, STR("cmdexec")));
 
 		cmdlist(&cmdData);
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("cmdlist")));
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("cmdexec")));
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("2 commands")));
+		assert(streq(nextEntry(&iter)->str, STR("cmdlist")));
+		assert(streq(nextEntry(&iter)->str, STR("cmdexec")));
+		assert(streq(nextEntry(&iter)->str, STR("2 commands")));
 
 		addCommand(&cmdData, cmdexec);
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("addCommand: cmdexec already defined")));
+		assert(streq(nextEntry(&iter)->str, STR("addCommand: cmdexec already defined")));
 
 		cmdexec(&cmdData);
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("exec <filename> : execute a script file")));
+		assert(streq(nextEntry(&iter)->str, STR("exec <filename> : execute a script file")));
 
 		cmdData.args.len = 2;
 		cmdData.args.ptr = arenaAllocAndZeroArray(arena, Str, cmdData.args.len);
@@ -314,14 +287,12 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 
 		cmdData.args.ptr[1] = tempfile;
 		cmdexec(&cmdData);
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, strfmt(arena, "execing %*s", LIT(tempfile))));
+		assert(streq(nextEntry(&iter)->str, strfmt(arena, "execing %*s", LIT(tempfile))));
 
 		assert(deleteFile(arena, tempfile) == Status_Ok);
 
 		cmdexec(&cmdData);
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, strfmt(arena, "couldn't exec %*s", LIT(tempfile))));
+		assert(streq(nextEntry(&iter)->str, strfmt(arena, "couldn't exec %*s", LIT(tempfile))));
 
 		cmdData.args.len = 4;
 		cmdData.args.ptr = arenaAllocAndZeroArray(arena, Str, cmdData.args.len);
@@ -330,9 +301,14 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		cmdData.args.ptr[2] = STR("arg2");
 		cmdData.args.ptr[3] = STR("arg3");
 
+		logentLenBefore = logents->len;
+		addCommand(&cmdData, cmdecho);
+		assert(logentLenBefore == logents->len);
+		addCommand(&cmdData, cmdecho);
+		assert(streq(nextEntry(&iter)->str, STR("addCommand: cmdecho could not be added, buffer full")));
+
 		cmdecho(&cmdData);
-		chronologicalIterNext(&iter);
-		assert(streq(currentEntry(&iter)->str, STR("arg1 arg2 arg3 ")));
+		assert(streq(nextEntry(&iter)->str, STR("arg1 arg2 arg3 ")));
 	}
 	
 	{
@@ -342,8 +318,7 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		addCommand(&cmdData, cmdexec);
 		addCommand(&cmdData, cmdexec);
 		LogChoronologicalIter iter = chronologicalIter(&log);
-		chronologicalIterNext(&iter);		
-		assert(streq(currentEntry(&iter)->str, STR("addCommand: cmdexec could not be added, buffer full")));
+		assert(streq(nextEntry(&iter)->str, STR("addCommand: cmdexec could not be added, buffer full")));
 	}
 
 	{
