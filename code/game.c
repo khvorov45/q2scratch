@@ -184,7 +184,9 @@ static void addToStr(StrBuilder* builder, char* fmt, ...) {
 
 static Str endStr(StrBuilder* builder) {
     Str str = {.ptr = builder->start, .len = (i64)((u64)arenaFreeptr(builder->arena) - (u64)builder->start)};
-    arenaAllocAndZero(builder->arena, 1);
+    if (arenaFreesize(builder->arena) >= 1) {
+        arenaAllocAndZero(builder->arena, 1); // NOTE: null terminator, we don't need it but it's good for debugging
+    }
     *builder = (StrBuilder) {};
     return str;
 }

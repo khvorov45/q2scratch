@@ -122,6 +122,13 @@ static Status deleteFile(Arena* arena, Str path) {
 }
 
 static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) {
+
+	{
+		Arena nullArena = {};
+		Str str = strfmt(&nullArena, "test");
+		assert(str.len == 0);
+	}
+
 	{
 		Str str1 = STR("test str 1");
 		Str str2 = STR("test str 2");
