@@ -231,7 +231,7 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		Log log = createLog(arena, 1, 1024, 8 * Kilobyte);
 		LogEntries* logents = &log.circle.ptr[0].entries;
 
-		CommandData cmdData = createCommandData(arena, 3, 1024, &log, platform);
+		CommandData cmdData = createCommandData(.arena = arena, .log = &log, .platform = platform, .maxCmds = 3);
 
 		assert(logents->len == 0);
 		cmdlist(&cmdData);
@@ -245,8 +245,7 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		assert(streq(cmdData.cmds.ptr[0].name, STR("cmdlist")));
 		cmdlist(&cmdData);
 
-		assert(streq(nextEntry(&iter)->str, STR("cmdlist")));
-		assert(streq(nextEntry(&iter)->str, STR("1 commands")));
+		assert(streq(nextEntry(&iter)->str, STR("cmdlist\n1 commands")));
 
 		addCommand(&cmdData, cmdlist);
 		assert(streq(nextEntry(&iter)->str, STR("addCommand: cmdlist already defined")));
@@ -268,9 +267,7 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		assert(streq(cmdData.cmds.ptr[1].name, STR("cmdexec")));
 
 		cmdlist(&cmdData);
-		assert(streq(nextEntry(&iter)->str, STR("cmdlist")));
-		assert(streq(nextEntry(&iter)->str, STR("cmdexec")));
-		assert(streq(nextEntry(&iter)->str, STR("2 commands")));
+		assert(streq(nextEntry(&iter)->str, STR("cmdlist\ncmdexec\n2 commands")));
 
 		addCommand(&cmdData, cmdexec);
 		assert(streq(nextEntry(&iter)->str, STR("addCommand: cmdexec already defined")));
@@ -278,14 +275,12 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		cmdexec(&cmdData);
 		assert(streq(nextEntry(&iter)->str, STR("exec <filename> : execute a script file")));
 
-		cmdData.args.len = 2;
-		cmdData.args.ptr = arenaAllocAndZeroArray(arena, Str, cmdData.args.len);
-		cmdData.args.ptr[0] = STR("cmdexec");
-
 		Str tempfile = STR("temp_file_for_testing.txt");
 		assert(writeEntireFile(arena, tempfile, "temp", 4) == Status_Ok);
 
-		cmdData.args.ptr[1] = tempfile;
+		clearArgs(&cmdData);
+		addArg(&cmdData, STR("cmdexec"));
+		addArg(&cmdData, tempfile);
 		cmdexec(&cmdData);
 		assert(streq(nextEntry(&iter)->str, strfmt(arena, "execing %*s", LIT(tempfile))));
 
@@ -294,12 +289,11 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		cmdexec(&cmdData);
 		assert(streq(nextEntry(&iter)->str, strfmt(arena, "couldn't exec %*s", LIT(tempfile))));
 
-		cmdData.args.len = 4;
-		cmdData.args.ptr = arenaAllocAndZeroArray(arena, Str, cmdData.args.len);
-		cmdData.args.ptr[0] = STR("echo");
-		cmdData.args.ptr[1] = STR("arg1");
-		cmdData.args.ptr[2] = STR("arg2");
-		cmdData.args.ptr[3] = STR("arg3");
+		clearArgs(&cmdData);
+		addArg(&cmdData, STR("echo"));
+		addArg(&cmdData, STR("arg1"));
+		addArg(&cmdData, STR("arg2"));
+		addArg(&cmdData, STR("arg3"));
 
 		logentLenBefore = logents->len;
 		addCommand(&cmdData, cmdecho);
@@ -312,21 +306,21 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 	}
 
 	{
-		Log log = createLog(arena, 1, 1024, 8 * Kilobyte);		
-		CommandData cmdData = createCommandData(arena, 3, 3, &log, platform);
+		Log log = createLog(arena, 1, 1024, 8 * Kilobyte);
+		CommandData cmdData = createCommandData(.arena = arena, .log = &log, .platform = platform);
 
 		Command cmd1 = {.name = STR("cmd1")};
 		Command cmd2 = {.name = STR("cmd2")};
 		Command cmd3 = {.name = STR("cmd3")};
-		dynarrpush(&cmdData.cmds, cmd1); 
-		dynarrpush(&cmdData.cmds, cmd2); 
+		dynarrpush(&cmdData.cmds, cmd1);
+		dynarrpush(&cmdData.cmds, cmd2);
 		dynarrpush(&cmdData.cmds, cmd3);
-		
+
 		CommandVar var1 = {.name = STR("var1")};
 		CommandVar var2 = {.name = STR("var2")};
 		CommandVar var3 = {.name = STR("var3")};
-		dynarrpush(&cmdData.vars, var1); 
-		dynarrpush(&cmdData.vars, var2); 
+		dynarrpush(&cmdData.vars, var1);
+		dynarrpush(&cmdData.vars, var2);
 		dynarrpush(&cmdData.vars, var3);
 
 		assert(findByName(cmdData.cmds, STR("cmd1")));
@@ -344,6 +338,49 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		assert(!findByName(cmdData.vars, STR("cmd1")));
 		assert(!findByName(cmdData.vars, STR("cmd2")));
 		assert(!findByName(cmdData.vars, STR("cmd3")));
+	}
+
+	{
+		Log log = createLog(arena, 1, 1024, 8 * Kilobyte);
+		CommandData cmdData = createCommandData(.arena = arena, .log = &log, .platform = platform);
+		LogChoronologicalIter iter = chronologicalIter(&log);
+
+		clearArgs(&cmdData);
+		addArg(&cmdData, STR("alias"));
+		addArg(&cmdData, STR("aliasname"));
+		addArg(&cmdData, STR("aliasvalue1"));
+		addArg(&cmdData, STR("aliasvalue2"));
+
+		assert(cmdData.aliases.len == 0);
+		cmdalias(&cmdData);
+		assert(cmdData.aliases.len == 1);
+		CommandAlias alias = cmdData.aliases.ptr[0];
+		assert(streq(alias.name, STR("aliasname")));
+		assert(streq(alias.value, STR("aliasvalue1 aliasvalue2")));
+		assertStrInArena(&alias.name, &alias.arena);
+		assertStrInArena(&alias.value, &alias.arena);
+
+		clearArgs(&cmdData);
+		addArg(&cmdData, STR("alias"));
+		addArg(&cmdData, STR("aliasname2"));
+		addArg(&cmdData, STR("aliasvalue1"));
+		addArg(&cmdData, STR("aliasvalue2"));
+		cmdalias(&cmdData);
+
+		assert(cmdData.aliases.len == 2);
+		
+		clearArgs(&cmdData);
+		addArg(&cmdData, STR("alias"));
+		addArg(&cmdData, STR("aliasname"));
+		addArg(&cmdData, STR("aliasvalue1"));
+		cmdalias(&cmdData);
+
+		assert(cmdData.aliases.len == 2);
+		alias = cmdData.aliases.ptr[0];
+		assert(streq(alias.value, STR("aliasvalue1")));
+		assert(alias.arena.used == sizeof("aliasname") + sizeof("aliasvalue1"));
+
+		assert(streq(currentEntry(&iter)->str, STR("overriding previously defined alias aliasname")));
 	}
 }}
 

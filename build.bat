@@ -11,4 +11,4 @@
 @REM     -g -o build/quake2.exe
 
 @rem -Wno-unused-parameter -Wno-unused-variable
-clang code/platform_windows.c -std=c2x -Wall -Wextra -Werror -ferror-limit=1 -Wno-unused-function -g -o build/platform_windows.exe
+clang code/platform_windows.c -std=c2x -Wall -Wextra -Werror -Wno-initializer-overrides -ferror-limit=1 -Wno-unused-function -g -o build/platform_windows.exe
