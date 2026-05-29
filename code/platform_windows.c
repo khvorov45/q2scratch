@@ -375,7 +375,7 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		cmdalias(&cmdData);
 
 		assert(cmdData.aliases.len == 2);
-		
+
 		clearArgs(&cmdData);
 		addArg(&cmdData, STR("alias"));
 		addArg(&cmdData, STR("aliasname"));

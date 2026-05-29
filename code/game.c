@@ -6,7 +6,6 @@
 #include <stddef.h>
 #include <stdarg.h>
 #include <string.h>
-#include <ctype.h>
 
 #define Byte 1
 #define Kilobyte 1024 * Byte
@@ -17,6 +16,7 @@
 #define assert(cond) do { if (cond) {} else __debugbreak(); } while (0)
 #endif
 
+#define unimplemented() __debugbreak()
 #define assertStrInArena(str, arena) assert((u64)(str)->ptr >= (u64)(arena)->base && (u64)(str)->ptr + (u64)(str)->len <= (u64)(arena)->base + (u64)(arena)->size);
 #define STRINGIFY_(x) #x
 #define STRINGIFY(x) STRINGIFY_(x)
@@ -350,53 +350,53 @@ struct CommandData;
 typedef void (*CommandProc)(struct CommandData*);
 
 typedef struct Command {
-	Str name;
+    Str name;
     CommandProc proc;
 } Command;
 typedef struct Commands {Command* ptr; i64 len; i64 cap;} Commands;
 
-typedef struct CommandVar {
-	Str name;
-	Str string;
-	Str latched_string; // NOTE: for CVAR_LATCH vars
-	i64 flags;
-	bool modified; // NOTE: set each time the cvar is changed
-	float value;
-} CommandVar;
-typedef struct CommandVars {CommandVar* ptr; i64 len; i64 cap;} CommandVars;
-
 typedef struct CommandAlias {
-	Str name;
-	Str value;
+    Str name;
+    Str value;
     Arena arena;
 } CommandAlias;
 typedef struct CommandAliases {CommandAlias* ptr; i64 len; i64 cap;} CommandAliases;
 
-_STATIC_ASSERT(offsetof(Command, name) == 0 && offsetof(CommandVar, name) == 0 && offsetof(CommandAlias, name) == 0);
+typedef struct CommandVar {
+    CommandAlias alias;
+} CommandVar;
+typedef struct CommandVars {CommandVar* ptr; i64 len; i64 cap;} CommandVars;
+
+_STATIC_ASSERT(offsetof(Command, name) == 0 && offsetof(CommandVar, alias) == 0 && offsetof(CommandAlias, name) == 0);
 #define findByName(slice, name) findByName_(slice.ptr, slice.len, name, sizeof(slice.ptr[0]))
 static void* findByName_(void* ptr, i64 len, Str name, i64 sizeOfOneEntry) {
     void* result = 0;
-	for (i64 byteIndex = 0; byteIndex < len * sizeOfOneEntry && !result; byteIndex += sizeOfOneEntry) {
+    for (i64 byteIndex = 0; byteIndex < len * sizeOfOneEntry && !result; byteIndex += sizeOfOneEntry) {
         Str* thisName = (Str*)(ptr + byteIndex);
-		if (streq(*thisName, name)) {
-			result = thisName;
+        if (streq(*thisName, name)) {
+            result = thisName;
         }
     }
-	return result;
+    return result;
 }
 
 typedef struct CommandArg {
-	Str value;
+    Str value;
 } CommandArg;
 typedef struct CommandArgs {CommandArg* ptr; i64 len; i64 cap;} CommandArgs;
+
+typedef struct CommandExecution {
+    Arena arena;
+    bool pauseUntilNextFrame;
+} CommandExecution;
 
 typedef struct CommandData {
     Commands cmds;
     CommandVars vars;
     CommandAliases aliases;
     CommandArgs args;
+    CommandExecution execution;
     Arena argsArena;
-    Arena executeArena;
     Arena aliasArena;
     Arena scratchArena;
     Log* log;
@@ -418,8 +418,8 @@ static CommandData createCommandData_(CommandDataOpts opts) {
         .aliases = (CommandAliases) arenaAllocDynarr(opts.arena, CommandAlias, opts.maxAliases),
         .args = (CommandArgs) arenaAllocDynarr(opts. arena, CommandArg, opts.maxArgs),
         .argsArena = arenaFromArena(opts.arena, opts.argsArenaSize),
-        .executeArena = arenaFromArena(opts.arena, opts.executeArenaSize),
-        .aliasArena = arenaFromArena(opts.arena, opts.aliasArenaSize * opts.maxAliases),
+        .execution = (CommandExecution) {.arena = arenaFromArena(opts.arena, opts.executeArenaSize), .pauseUntilNextFrame = false},
+        .aliasArena = arenaFromArena(opts.arena, opts.aliasArenaSize * (opts.maxAliases + opts.maxVars)),
         .scratchArena = arenaFromArena(opts.arena, opts.scratchArenaSize),
         .log = opts.log,
         .platform = opts.platform
@@ -477,18 +477,18 @@ static void cmdlist(CommandData* data) {
 }
 
 static void cmdexec(CommandData* data) {
-	if (data->args.len == 2) {
+    if (data->args.len == 2) {
         assert(data->platform->readEntireFile);
-        assert(data->executeArena.base);
+        assert(data->execution.arena.base);
         Str filename = data->args.ptr[1].value;
-        ReadResult readResult = data->platform->readEntireFile(&data->executeArena, filename);
+        ReadResult readResult = data->platform->readEntireFile(&data->execution.arena, filename);
         if (readResult.status == Status_Ok) {
             addLogEntry(data->log, LogEntryCategory_Ok, "execing %*s", LIT(filename));
         } else {
             addLogEntry(data->log, LogEntryCategory_Error, "couldn't exec %*s", LIT(filename));
         }
     } else {
-		addLogEntry(data->log, LogEntryCategory_Ok, "exec <filename> : execute a script file");
+        addLogEntry(data->log, LogEntryCategory_Ok, "exec <filename> : execute a script file");
     }
 }
 
@@ -564,6 +564,10 @@ static void cmdalias(CommandData* data) {
     }
 }
 
+void cmdwait(CommandData* data) {
+    data->execution.pauseUntilNextFrame = true;
+}
+
 //
 // SECTION Init
 //
@@ -575,12 +579,11 @@ static void gameInit(Arena* arena, Platform* platform) {
     CommandData* cmdData = arenaAllocAndZeroArray(arena, CommandData, 1);
     *cmdData = createCommandData(.arena = arena, .log = log, .platform = platform);
 
-	addCommand(cmdData, cmdlist);
-	addCommand(cmdData, cmdexec);
-	addCommand(cmdData, cmdecho);
-	addCommand(cmdData, cmdalias);
-	// addCommand(STR("wait"), Cmd_Wait_f);
-// 	Cvar_Init ();
+    addCommand(cmdData, cmdlist);
+    addCommand(cmdData, cmdexec);
+    addCommand(cmdData, cmdecho);
+    addCommand(cmdData, cmdalias);
+    addCommand(cmdData, cmdwait);
 
 // 	Key_Init ();
 
@@ -648,6 +651,6 @@ static void gameInit(Arena* arena, Platform* platform) {
 // 		SCR_EndLoadingPlaque ();
 // 	}
 
-// 	Com_Printf ("====== Quake2 Initialized ======\n\n");	
+// 	Com_Printf ("====== Quake2 Initialized ======\n\n");
 }
 

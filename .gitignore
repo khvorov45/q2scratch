@@ -1,3 +1,5 @@
 /.vscode
 *.rdbg
 *.code-workspace
+*.zed
+compile_flags.txt
