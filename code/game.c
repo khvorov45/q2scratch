@@ -551,8 +551,28 @@ static void cmdalias(CommandData* data) {
     }
 }
 
-void cmdwait(CommandData* data) {
+static void cmdwait(CommandData* data) {
     data->execution.pauseUntilNextFrame = true;
+}
+
+static void cmdkeybind(CommandData* data) {
+    unused(data);
+    unimplemented();
+}
+
+static void cmdkeyunbind(CommandData* data) {
+    unused(data);
+    unimplemented();
+}
+
+static void cmdkeyunbindall(CommandData* data) {
+    unused(data);
+    unimplemented();
+}
+
+static void cmdkeybindlist(CommandData* data) {
+    unused(data);
+    unimplemented();
 }
 
 //
@@ -571,8 +591,10 @@ static void gameInit(Arena* arena, Platform* platform) {
     addCommand(cmdData, cmdecho);
     addCommand(cmdData, cmdalias);
     addCommand(cmdData, cmdwait);
-
-// 	Key_Init ();
+    addCommand(cmdData, cmdkeybind);
+    addCommand(cmdData, cmdkeyunbind);
+    addCommand(cmdData, cmdkeyunbindall);
+    addCommand(cmdData, cmdkeybindlist);
 
 // 	// we need to add the early commands twice, because
 // 	// a basedir or cddir needs to be set before execing
