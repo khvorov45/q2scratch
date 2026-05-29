@@ -257,15 +257,6 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		addCommand(&cmdData, cmdlist);
 		assert(streq(nextEntry(&iter)->str, STR("addCommand: cmdlist already defined")));
 
-		CommandVar cmdVar1 = {.name = STR("cmdVar1")};
-		CommandVar cmdVar2 = {.name = STR("cmdexec")};
-		dynarrpush(&cmdData.vars, cmdVar1);
-		dynarrpush(&cmdData.vars, cmdVar2);
-
-		addCommand(&cmdData, cmdexec);
-		assert(streq(nextEntry(&iter)->str, STR("addCommand: cmdexec already defined as a var")));
-		cmdData.vars.len = 0;
-
 		i64 logentLenBefore = logents->len;
 		addCommand(&cmdData, cmdexec);
 		assert(logentLenBefore == logents->len);
@@ -323,28 +314,13 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		dynarrpush(&cmdData.cmds, cmd2);
 		dynarrpush(&cmdData.cmds, cmd3);
 
-		CommandVar var1 = {.name = STR("var1")};
-		CommandVar var2 = {.name = STR("var2")};
-		CommandVar var3 = {.name = STR("var3")};
-		dynarrpush(&cmdData.vars, var1);
-		dynarrpush(&cmdData.vars, var2);
-		dynarrpush(&cmdData.vars, var3);
-
 		assert(findByName(cmdData.cmds, STR("cmd1")));
 		assert(findByName(cmdData.cmds, STR("cmd2")));
 		assert(findByName(cmdData.cmds, STR("cmd3")));
 
-		assert(findByName(cmdData.vars, STR("var1")));
-		assert(findByName(cmdData.vars, STR("var2")));
-		assert(findByName(cmdData.vars, STR("var3")));
-
 		assert(!findByName(cmdData.cmds, STR("var1")));
 		assert(!findByName(cmdData.cmds, STR("var2")));
 		assert(!findByName(cmdData.cmds, STR("var3")));
-
-		assert(!findByName(cmdData.vars, STR("cmd1")));
-		assert(!findByName(cmdData.vars, STR("cmd2")));
-		assert(!findByName(cmdData.vars, STR("cmd3")));
 	}
 
 	{

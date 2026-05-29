@@ -362,12 +362,7 @@ typedef struct CommandAlias {
 } CommandAlias;
 typedef struct CommandAliases {CommandAlias* ptr; i64 len; i64 cap;} CommandAliases;
 
-typedef struct CommandVar {
-    CommandAlias alias;
-} CommandVar;
-typedef struct CommandVars {CommandVar* ptr; i64 len; i64 cap;} CommandVars;
-
-_STATIC_ASSERT(offsetof(Command, name) == 0 && offsetof(CommandVar, alias) == 0 && offsetof(CommandAlias, name) == 0);
+_STATIC_ASSERT(offsetof(Command, name) == 0 && offsetof(CommandAlias, name) == 0);
 #define findByName(slice, name) findByName_(slice.ptr, slice.len, name, sizeof(slice.ptr[0]))
 static void* findByName_(void* ptr, i64 len, Str name, i64 sizeOfOneEntry) {
     void* result = 0;
@@ -392,7 +387,6 @@ typedef struct CommandExecution {
 
 typedef struct CommandData {
     Commands cmds;
-    CommandVars vars;
     CommandAliases aliases;
     CommandArgs args;
     CommandExecution execution;
@@ -405,21 +399,20 @@ typedef struct CommandData {
 
 typedef struct CommandDataOpts {
     Arena* arena;
-    i64 maxCmds, maxVars, maxAliases, maxArgs, argsArenaSize, executeArenaSize, aliasArenaSize, scratchArenaSize;
+    i64 maxCmds, maxAliases, maxArgs, argsArenaSize, executeArenaSize, aliasArenaSize, scratchArenaSize;
     Log* log;
     Platform* platform;
 } CommandDataOpts;
 
-#define createCommandData(...) createCommandData_((CommandDataOpts) {.maxCmds = 1024, .maxVars = 1024, .maxAliases = 1024, .maxArgs = 64, .argsArenaSize = 1 * Kilobyte, .executeArenaSize = 1 * Kilobyte, .aliasArenaSize = 1 * Kilobyte, .scratchArenaSize = 1 * Kilobyte, __VA_ARGS__})
+#define createCommandData(...) createCommandData_((CommandDataOpts) {.maxCmds = 1024, .maxAliases = 1024, .maxArgs = 64, .argsArenaSize = 1 * Kilobyte, .executeArenaSize = 1 * Kilobyte, .aliasArenaSize = 1 * Kilobyte, .scratchArenaSize = 1 * Kilobyte, __VA_ARGS__})
 static CommandData createCommandData_(CommandDataOpts opts) {
     CommandData cmdData = {
         .cmds = (Commands) arenaAllocDynarr(opts.arena, Command, opts.maxCmds),
-        .vars = (CommandVars) arenaAllocDynarr(opts.arena, CommandVar, opts.maxVars),
         .aliases = (CommandAliases) arenaAllocDynarr(opts.arena, CommandAlias, opts.maxAliases),
         .args = (CommandArgs) arenaAllocDynarr(opts. arena, CommandArg, opts.maxArgs),
         .argsArena = arenaFromArena(opts.arena, opts.argsArenaSize),
         .execution = (CommandExecution) {.arena = arenaFromArena(opts.arena, opts.executeArenaSize), .pauseUntilNextFrame = false},
-        .aliasArena = arenaFromArena(opts.arena, opts.aliasArenaSize * (opts.maxAliases + opts.maxVars)),
+        .aliasArena = arenaFromArena(opts.arena, opts.aliasArenaSize * (opts.maxAliases)),
         .scratchArena = arenaFromArena(opts.arena, opts.scratchArenaSize),
         .log = opts.log,
         .platform = opts.platform
@@ -448,15 +441,11 @@ static void addArg(CommandData* data, Str arg) {
 #define addCommand(data, name) addCommand_(data, STR(STRINGIFY(name)), name);
 static void addCommand_(CommandData* data, Str name, CommandProc function) {
     if (data->cmds.len < data->cmds.cap) {
-        if (findByName(data->vars, name) == 0) {
-            if (findByName(data->cmds, name) == 0) {
-                Command entry = {.proc = function, .name = name};
-                dynarrpush(&data->cmds, entry);
-            } else {
-                addLogEntry(data->log, LogEntryCategory_Error, "addCommand: %*s already defined", LIT(name));
-            }
+        if (findByName(data->cmds, name) == 0) {
+            Command entry = {.proc = function, .name = name};
+            dynarrpush(&data->cmds, entry);
         } else {
-            addLogEntry(data->log, LogEntryCategory_Error, "addCommand: %*s already defined as a var", LIT(name));
+            addLogEntry(data->log, LogEntryCategory_Error, "addCommand: %*s already defined", LIT(name));
         }
     } else {
         addLogEntry(data->log, LogEntryCategory_Error, "addCommand: %*s could not be added, buffer full", LIT(name));
