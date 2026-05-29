@@ -17,7 +17,7 @@
 #endif
 
 #define unimplemented() __debugbreak()
-#define assertStrInArena(str, arena) assert((u64)(str)->ptr >= (u64)(arena)->base && (u64)(str)->ptr + (u64)(str)->len <= (u64)(arena)->base + (u64)(arena)->size);
+#define assertStrInArena(str, arena) assert((u64)(str).ptr >= (u64)(arena).base && (u64)(str).ptr + (u64)(str).len <= (u64)(arena).base + (u64)(arena).size);
 #define STRINGIFY_(x) #x
 #define STRINGIFY(x) STRINGIFY_(x)
 #define STR(x) ((Str){x, sizeof(x) - 1})
@@ -325,6 +325,61 @@ static LogEntry* nextEntry(LogChoronologicalIter* iter) {
 }
 
 //
+// SECTION Input
+//
+
+typedef enum InputKey {
+    InputKey_None,
+    InputKey_Up,
+    InputKey_Down,
+    InputKey_Left,
+    InputKey_Right,
+    InputKey_a,
+    InputKey_b,
+    InputKey_c,
+    InputKey_d,
+    InputKey_e,
+    InputKey_f,
+    InputKey_g,
+    InputKey_h,
+    InputKey_i,
+    InputKey_j,
+    InputKey_k,
+    InputKey_l,
+    InputKey_m,
+    InputKey_n,
+    InputKey_o,
+    InputKey_p,
+    InputKey_q,
+    InputKey_r,
+    InputKey_s,
+    InputKey_t,
+    InputKey_u,
+    InputKey_v,
+    InputKey_w,
+    InputKey_x,
+    InputKey_y,
+    InputKey_z,
+    InputKey_Count,
+} InputKey;
+
+typedef struct KeyBinding {
+    Str str;
+    Arena arena;
+} KeyBinding;
+
+static InputKey keyFromStr(Str name) {
+    InputKey result = InputKey_None;
+    if (name.len == 1) {
+        char ch = name.ptr[0];
+        if (ch >= 'a' && ch <= 'z') {
+            result = (InputKey)(ch - 'a' + InputKey_a);
+        }
+    }
+    return result;
+}
+
+//
 // SECTION Platform API
 //
 
@@ -389,8 +444,9 @@ typedef struct CommandData {
     Commands cmds;
     CommandAliases aliases;
     CommandArgs args;
-    CommandExecution execution;
     Arena argsArena;
+    CommandExecution execution;
+    struct {KeyBinding* ptr; i64 len;} keybindings;
     Arena scratchArena;
     Log* log;
     Platform* platform;
@@ -411,10 +467,14 @@ static CommandData createCommandData_(CommandDataOpts opts) {
         .args = (CommandArgs) arenaAllocDynarr(opts. arena, CommandArg, opts.maxArgs),
         .argsArena = arenaFromArena(opts.arena, opts.argsArenaSize),
         .execution = (CommandExecution) {.arena = arenaFromArena(opts.arena, opts.executeArenaSize), .pauseUntilNextFrame = false},
+        .keybindings = {.ptr = arenaAllocAndZeroArray(opts.arena, KeyBinding, InputKey_Count), .len = InputKey_Count},
         .scratchArena = arenaFromArena(opts.arena, opts.scratchArenaSize),
         .log = opts.log,
         .platform = opts.platform
     };
+    for (i64 index = 0; index < InputKey_Count; index++) {
+        cmdData.keybindings.ptr[index].arena = arenaFromArena(opts.arena, opts.aliasArenaSize);
+    }
     return cmdData;
 }
 
@@ -429,7 +489,7 @@ static void addArg(CommandData* data, Str arg) {
         CommandArg newArg = {.value = strfmt(&data->argsArena, "%*s", LIT(arg))};
         dynarrpush(&data->args, newArg);
         CommandArg* addedArg = data->args.ptr + data->args.len - 1;
-        assertStrInArena(&addedArg->value, &data->argsArena);
+        assertStrInArena(addedArg->value, data->argsArena);
     } else {
         assert(data->args.len == data->args.cap);
         addLogEntry(data->log, LogEntryCategory_Error, "could not add arg, buffer full");
@@ -534,7 +594,7 @@ static void cmdalias(CommandData* data) {
             assert(alias->arena.base);
             assert(alias->name.len > 0);
             assert(alias->name.ptr);
-            assertStrInArena(&alias->name, &alias->arena);
+            assertStrInArena(alias->name, alias->arena);
 
             StrBuilder builder = beginStr(&alias->arena);
             for (i64 index = 2; index < data->args.len; index++) {
@@ -546,7 +606,7 @@ static void cmdalias(CommandData* data) {
             }
             alias->value = endStr(&builder);
 
-            assertStrInArena(&alias->value, &alias->arena);
+            assertStrInArena(alias->value, alias->arena);
         }
     }
 }
@@ -556,8 +616,43 @@ static void cmdwait(CommandData* data) {
 }
 
 static void cmdkeybind(CommandData* data) {
-    unused(data);
-    unimplemented();
+    if (data->args.len >= 2) {
+        Str keyName = data->args.ptr[1].value;
+        InputKey key = keyFromStr(keyName);
+
+        if (key != InputKey_None) {
+            KeyBinding* binding = data->keybindings.ptr + key;
+            if (data->args.len == 2) {
+                if (binding->str.len > 0) {
+                    addLogEntry(data->log, LogEntryCategory_Ok, "Current binding for \"%*s\" is \"%*s\"", LIT(keyName), LIT(binding->str));
+                } else {
+                    addLogEntry(data->log, LogEntryCategory_Ok, "\"%*s\" is not currently bound", LIT(keyName) );
+                }
+            } else {
+                tempMemoryBlock(&data->scratchArena) {
+                    StrBuilder builder = beginStr(&data->scratchArena);
+                    for (i64 index = 2; index < data->args.len; index++) {
+                        Str arg = data->args.ptr[index].value;
+                        addToStr(&builder, "%*s", LIT(arg));
+                        if (index != (data->args.len - 1)) {
+                            addToStr(&builder, " ");
+                        }
+                    }
+                    Str command = endStr(&builder);
+                    binding->arena.used = 0;
+                    binding->str = strfmt(&binding->arena, "%*s", LIT(command));
+                    addLogEntry(data->log, LogEntryCategory_Ok, "Bound \"%*s\" to \"%*s\"", LIT(keyName), LIT(command));
+                    assertStrInArena(binding->str, binding->arena);
+                }
+            }
+
+        } else {
+            addLogEntry(data->log, LogEntryCategory_Error, "\"%*s\" is not a valid key", LIT(keyName));
+        }
+
+    } else {
+        addLogEntry(data->log, LogEntryCategory_Ok, "usage: keybind <key> <command(s)>");
+    }
 }
 
 static void cmdkeyunbind(CommandData* data) {
