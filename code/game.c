@@ -360,7 +360,7 @@ typedef struct CommandAlias {
     Str value;
     Arena arena;
 } CommandAlias;
-typedef struct CommandAliases {CommandAlias* ptr; i64 len; i64 cap;} CommandAliases;
+typedef struct CommandAliases {struct {CommandAlias* ptr; i64 len; i64 cap;} arr; Arena arena;} CommandAliases;
 
 _STATIC_ASSERT(offsetof(Command, name) == 0 && offsetof(CommandAlias, name) == 0);
 #define findByName(slice, name) findByName_(slice.ptr, slice.len, name, sizeof(slice.ptr[0]))
@@ -391,7 +391,6 @@ typedef struct CommandData {
     CommandArgs args;
     CommandExecution execution;
     Arena argsArena;
-    Arena aliasArena;
     Arena scratchArena;
     Log* log;
     Platform* platform;
@@ -408,11 +407,10 @@ typedef struct CommandDataOpts {
 static CommandData createCommandData_(CommandDataOpts opts) {
     CommandData cmdData = {
         .cmds = (Commands) arenaAllocDynarr(opts.arena, Command, opts.maxCmds),
-        .aliases = (CommandAliases) arenaAllocDynarr(opts.arena, CommandAlias, opts.maxAliases),
+        .aliases = (CommandAliases) {.arr = arenaAllocDynarr(opts.arena, CommandAlias, opts.maxAliases), .arena = arenaFromArena(opts.arena, opts.aliasArenaSize * (opts.maxAliases))},
         .args = (CommandArgs) arenaAllocDynarr(opts. arena, CommandArg, opts.maxArgs),
         .argsArena = arenaFromArena(opts.arena, opts.argsArenaSize),
         .execution = (CommandExecution) {.arena = arenaFromArena(opts.arena, opts.executeArenaSize), .pauseUntilNextFrame = false},
-        .aliasArena = arenaFromArena(opts.arena, opts.aliasArenaSize * (opts.maxAliases)),
         .scratchArena = arenaFromArena(opts.arena, opts.scratchArenaSize),
         .log = opts.log,
         .platform = opts.platform
@@ -498,8 +496,8 @@ static void cmdalias(CommandData* data) {
         tempMemoryBlock(&data->scratchArena) {
             StrBuilder builder = beginStr(&data->scratchArena);
             addToStr(&builder, "Current alias commands:\n");
-            for (i64 index = 0; index < data->aliases.len; index++) {
-                CommandAlias alias = data->aliases.ptr[index];
+            for (i64 index = 0; index < data->aliases.arr.len; index++) {
+                CommandAlias alias = data->aliases.arr.ptr[index];
                 addToStr(&builder, "%*s : %*.s\n", LIT(alias.name), LIT(alias.value));
             }
             Str out = endStr(&builder);
@@ -511,16 +509,16 @@ static void cmdalias(CommandData* data) {
 
     } else if (data->args.len > 2) {
         Str nameInArgs = data->args.ptr[1].value;
-        CommandAlias* alias = findByName(data->aliases, nameInArgs);
+        CommandAlias* alias = findByName(data->aliases.arr, nameInArgs);
 
         if (!alias) {
-            if (data->aliases.len < data->aliases.cap) {
-                CommandAlias newAlias = {.arena = arenaFromArena(&data->aliasArena, data->aliasArena.size / data->aliases.cap)};
+            if (data->aliases.arr.len < data->aliases.arr.cap) {
+                CommandAlias newAlias = {.arena = arenaFromArena(&data->aliases.arena, data->aliases.arena.size / data->aliases.arr.cap)};
                 newAlias.name = strfmt(&newAlias.arena, "%*s", LIT(nameInArgs));
-                dynarrpush(&data->aliases, newAlias);
-                alias = data->aliases.ptr + data->aliases.len - 1;
+                dynarrpush(&data->aliases.arr, newAlias);
+                alias = data->aliases.arr.ptr + data->aliases.arr.len - 1;
             } else {
-                assert(data->aliases.len == data->aliases.cap);
+                assert(data->aliases.arr.len == data->aliases.arr.cap);
                 addLogEntry(data->log, LogEntryCategory_Error, "could not add alias %*s, buffer full", LIT(nameInArgs));
             }
 

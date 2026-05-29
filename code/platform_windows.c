@@ -334,10 +334,10 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		addArg(&cmdData, STR("aliasvalue1"));
 		addArg(&cmdData, STR("aliasvalue2"));
 
-		assert(cmdData.aliases.len == 0);
+		assert(cmdData.aliases.arr.len == 0);
 		cmdalias(&cmdData);
-		assert(cmdData.aliases.len == 1);
-		CommandAlias alias = cmdData.aliases.ptr[0];
+		assert(cmdData.aliases.arr.len == 1);
+		CommandAlias alias = cmdData.aliases.arr.ptr[0];
 		assert(streq(alias.name, STR("aliasname")));
 		assert(streq(alias.value, STR("aliasvalue1 aliasvalue2")));
 		assertStrInArena(&alias.name, &alias.arena);
@@ -350,7 +350,7 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		addArg(&cmdData, STR("aliasvalue2"));
 		cmdalias(&cmdData);
 
-		assert(cmdData.aliases.len == 2);
+		assert(cmdData.aliases.arr.len == 2);
 
 		clearArgs(&cmdData);
 		addArg(&cmdData, STR("alias"));
@@ -358,8 +358,8 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
 		addArg(&cmdData, STR("aliasvalue1"));
 		cmdalias(&cmdData);
 
-		assert(cmdData.aliases.len == 2);
-		alias = cmdData.aliases.ptr[0];
+		assert(cmdData.aliases.arr.len == 2);
+		alias = cmdData.aliases.arr.ptr[0];
 		assert(streq(alias.value, STR("aliasvalue1")));
 		assert(alias.arena.used == sizeof("aliasname") + sizeof("aliasvalue1"));
 
