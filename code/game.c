@@ -738,7 +738,7 @@ static void cmdkeyunbindall(CommandData* data) { tempMemoryBlock(&data->scratchA
                 binding->str.len = 0;
                 binding->arena.used = 0;
                 Str keyName = keyToStr(index);
-                addToStr(&builder, "Unbound \"%*s\"\n", LIT(keyName));
+                addToStr(&builder, "Unbound \"%*s\" from \"%*s\"\n", LIT(keyName), LIT(binding->str));
             }
         }
         if ((u64)builder.start != (u64)arenaFreeptr(builder.arena)) {
@@ -753,10 +753,29 @@ static void cmdkeyunbindall(CommandData* data) { tempMemoryBlock(&data->scratchA
     }
 }}
 
-static void cmdkeybindlist(CommandData* data) {
-    unused(data);
-    unimplemented();
-}
+static void cmdkeybindlist(CommandData* data) { tempMemoryBlock(&data->scratchArena) {
+    if (data->args.arr.len == 1) {
+        StrBuilder builder = beginStr(&data->scratchArena);
+        i64 count = 0;
+        for (i64 index = 0; index < data->keybindings.len; index++) {
+            KeyBinding* binding = data->keybindings.ptr + index;
+            if (binding->str.len > 0) {
+                count++;
+                Str keyName = keyToStr(index);
+                addToStr(&builder, "\"%*s\" -> \"%*s\"\n", LIT(keyName), LIT(binding->str));
+            }
+        }
+        if ((u64)builder.start != (u64)arenaFreeptr(builder.arena)) {
+            addToStr(&builder, "%lli existing key bindings", count);
+            Str entry = endStr(&builder);
+            addLogEntry(data->log, LogEntryCategory_Ok, "%*s", LIT(entry));
+        } else {
+            addLogEntry(data->log, LogEntryCategory_Ok, "No keys bound");
+        }
+    } else {
+        addLogEntry(data->log, LogEntryCategory_Error, "usage: keybindlist");
+    }
+}}
 
 //
 // SECTION Init

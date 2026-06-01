@@ -446,9 +446,22 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
             assert(streq(nextEntry(&iter)->str, STR("Bound \"b\" to \"cmdexec\"")));
 
             clearArgs(&cmdData);
+            addArg(&cmdData, STR("cmdkeybindlist"));
+            cmdkeybindlist(&cmdData);
+            assert(streq(nextEntry(&iter)->str, STR("\"a\" -> \"cmdlist\"\n\"b\" -> \"cmdexec\"\n2 existing key bindings")));
+
+            clearArgs(&cmdData);
             addArg(&cmdData, STR("cmdkeyunbindall"));
             cmdkeyunbindall(&cmdData);
-            assert(streq(nextEntry(&iter)->str, STR("Unbound \"a\"\nUnbound \"b\"\nUnbound all keys")));
+            assert(streq(nextEntry(&iter)->str, STR("Unbound \"a\" from \"cmdlist\"\nUnbound \"b\" from \"cmdexec\"\nUnbound all keys")));
+
+            clearArgs(&cmdData);
+            addArg(&cmdData, STR("cmdkeybindlist"));
+            cmdkeybindlist(&cmdData);
+            assert(streq(nextEntry(&iter)->str, STR("No keys bound")));
+            addArg(&cmdData, STR("arg"));
+            cmdkeybindlist(&cmdData);
+            assert(streq(nextEntry(&iter)->str, STR("usage: keybindlist")));
         }
     }
 }}
