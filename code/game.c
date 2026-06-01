@@ -798,49 +798,6 @@ static void gameInit(Arena* arena, Platform* platform) {
     addCommand(cmdData, cmdkeyunbindall);
     addCommand(cmdData, cmdkeybindlist);
 
-// 	// we need to add the early commands twice, because
-// 	// a basedir or cddir needs to be set before execing
-// 	// config files, but we want other parms to override
-// 	// the settings of the config files
-// 	Cbuf_AddEarlyCommands (false);
-// 	Cbuf_Execute ();
-
-// 	FS_InitFilesystem ();
-
-// 	Cbuf_AddText ("exec default.cfg\n");
-// 	Cbuf_AddText ("exec config.cfg\n");
-
-// 	Cbuf_AddEarlyCommands (true);
-// 	Cbuf_Execute ();
-
-// 	//
-// 	// init commands and vars
-// 	//
-//     Cmd_AddCommand ("z_stats", Z_Stats_f);
-//     Cmd_AddCommand ("error", Com_Error_f);
-
-// 	host_speeds = Cvar_Get ("host_speeds", "0", 0);
-// 	log_stats = Cvar_Get ("log_stats", "0", 0);
-// 	developer = Cvar_Get ("developer", "0", 0);
-// 	timescale = Cvar_Get ("timescale", "1", 0);
-// 	fixedtime = Cvar_Get ("fixedtime", "0", 0);
-// 	logfile_active = Cvar_Get ("logfile", "0", 0);
-// 	showtrace = Cvar_Get ("showtrace", "0", 0);
-// #ifdef DEDICATED_ONLY
-// 	dedicated = Cvar_Get ("dedicated", "1", CVAR_NOSET);
-// #else
-// 	dedicated = Cvar_Get ("dedicated", "0", CVAR_NOSET);
-// #endif
-
-// 	char* s = va("%4.2f %s %s %s", VERSION, CPUSTRING, __DATE__, BUILDSTRING);
-// 	Cvar_Get ("version", s, CVAR_SERVERINFO|CVAR_NOSET);
-
-
-// 	if (dedicated->value)
-// 		Cmd_AddCommand ("quit", Com_Quit);
-
-// 	Sys_Init ();
-
 // 	NET_Init ();
 // 	Netchan_Init ();
 

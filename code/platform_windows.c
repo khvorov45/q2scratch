@@ -1,8 +1,11 @@
 #include "game.c"
 
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <timeapi.h>
 
-#pragma comment(lib, "user32")
+#pragma comment(lib, "User32")
+#pragma comment(lib, "Winmm")
 
 //
 // SECTION Misc
@@ -479,6 +482,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     Platform platform = {.readEntireFile = readEntireFile};
 
     allTests_(arena, &platform);
+
+    {
+        MMRESULT result = timeBeginPeriod(1);
+        assert(result == TIMERR_NOERROR);
+    }
 
     Strslice cmdLineArguments = parseCommandLine(arena, (Str) {lpCmdLine, strlen(lpCmdLine)});
     unused(cmdLineArguments);
