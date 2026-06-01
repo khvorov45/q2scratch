@@ -421,6 +421,35 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
         addArg(&cmdData, STR("invalid"));
         cmdkeyunbind(&cmdData);
         assert(streq(nextEntry(&iter)->str, STR("\"invalid\" is not a valid key")));
+
+        clearArgs(&cmdData);
+        addArg(&cmdData, STR("cmdkeyunbindall"));
+        cmdkeyunbindall(&cmdData);
+        assert(streq(nextEntry(&iter)->str, STR("No keys bound")));
+        addArg(&cmdData, STR("arg"));
+        cmdkeyunbindall(&cmdData);
+        assert(streq(nextEntry(&iter)->str, STR("usage: keyunbindall")));
+
+        {
+            clearArgs(&cmdData);
+            addArg(&cmdData, STR("cmdkeybind"));
+            addArg(&cmdData, STR("a"));
+            addArg(&cmdData, STR("cmdlist"));
+            cmdkeybind(&cmdData);
+            assert(streq(nextEntry(&iter)->str, STR("Bound \"a\" to \"cmdlist\"")));
+
+            clearArgs(&cmdData);
+            addArg(&cmdData, STR("cmdkeybind"));
+            addArg(&cmdData, STR("b"));
+            addArg(&cmdData, STR("cmdexec"));
+            cmdkeybind(&cmdData);
+            assert(streq(nextEntry(&iter)->str, STR("Bound \"b\" to \"cmdexec\"")));
+
+            clearArgs(&cmdData);
+            addArg(&cmdData, STR("cmdkeyunbindall"));
+            cmdkeyunbindall(&cmdData);
+            assert(streq(nextEntry(&iter)->str, STR("Unbound \"a\"\nUnbound \"b\"\nUnbound all keys")));
+        }
     }
 }}
 

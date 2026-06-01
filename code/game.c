@@ -379,6 +379,46 @@ static InputKey keyFromStr(Str name) {
     return result;
 }
 
+static const Str globalKeyNames[InputKey_Count] = {
+    [InputKey_None] = STR("none"),
+    [InputKey_Up] = STR("up"),
+    [InputKey_Down] = STR("down"),
+    [InputKey_Left] = STR("left"),
+    [InputKey_Right] = STR("right"),
+    [InputKey_a] = STR("a"),
+    [InputKey_b] = STR("b"),
+    [InputKey_c] = STR("c"),
+    [InputKey_d] = STR("d"),
+    [InputKey_e] = STR("e"),
+    [InputKey_f] = STR("f"),
+    [InputKey_g] = STR("g"),
+    [InputKey_h] = STR("h"),
+    [InputKey_i] = STR("i"),
+    [InputKey_j] = STR("j"),
+    [InputKey_k] = STR("k"),
+    [InputKey_l] = STR("l"),
+    [InputKey_m] = STR("m"),
+    [InputKey_n] = STR("n"),
+    [InputKey_o] = STR("o"),
+    [InputKey_p] = STR("p"),
+    [InputKey_q] = STR("q"),
+    [InputKey_r] = STR("r"),
+    [InputKey_s] = STR("s"),
+    [InputKey_t] = STR("t"),
+    [InputKey_u] = STR("u"),
+    [InputKey_v] = STR("v"),
+    [InputKey_w] = STR("w"),
+    [InputKey_x] = STR("x"),
+    [InputKey_y] = STR("y"),
+    [InputKey_z] = STR("z"),
+};
+
+static Str keyToStr(InputKey key) {
+    assert(key >= InputKey_None && key < InputKey_Count);
+    Str result = globalKeyNames[key];
+    return result;
+}
+
 //
 // SECTION Platform API
 //
@@ -661,7 +701,7 @@ static void cmdkeybind(CommandData* data) {
         }
 
     } else {
-        addLogEntry(data->log, LogEntryCategory_Ok, "usage: keybind <key> <command(s)>");
+        addLogEntry(data->log, LogEntryCategory_Error, "usage: keybind <key> <command(s)>");
     }
 }
 
@@ -685,14 +725,33 @@ static void cmdkeyunbind(CommandData* data) {
         }
 
     } else {
-        addLogEntry(data->log, LogEntryCategory_Ok, "usage: unkeybind <key>");
+        addLogEntry(data->log, LogEntryCategory_Error, "usage: keyunbind <key>");
     }
 }
 
-static void cmdkeyunbindall(CommandData* data) {
-    unused(data);
-    unimplemented();
-}
+static void cmdkeyunbindall(CommandData* data) { tempMemoryBlock(&data->scratchArena) {
+    if (data->args.arr.len == 1) {
+        StrBuilder builder = beginStr(&data->scratchArena);
+        for (i64 index = 0; index < data->keybindings.len; index++) {
+            KeyBinding* binding = data->keybindings.ptr + index;
+            if (binding->str.len > 0) {
+                binding->str.len = 0;
+                binding->arena.used = 0;
+                Str keyName = keyToStr(index);
+                addToStr(&builder, "Unbound \"%*s\"\n", LIT(keyName));
+            }
+        }
+        if ((u64)builder.start != (u64)arenaFreeptr(builder.arena)) {
+            addToStr(&builder, "Unbound all keys");
+            Str entry = endStr(&builder);
+            addLogEntry(data->log, LogEntryCategory_Ok, "%*s", LIT(entry));
+        } else {
+            addLogEntry(data->log, LogEntryCategory_Ok, "No keys bound");
+        }
+    } else {
+        addLogEntry(data->log, LogEntryCategory_Error, "usage: keyunbindall");
+    }
+}}
 
 static void cmdkeybindlist(CommandData* data) {
     unused(data);
