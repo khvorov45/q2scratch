@@ -403,6 +403,24 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
         addArg(&cmdData, STR("a"));
         cmdkeybind(&cmdData);
         assert(streq(nextEntry(&iter)->str, STR("Current binding for \"a\" is \"cmdlist cmdexec\"")));
+
+        clearArgs(&cmdData);
+        addArg(&cmdData, STR("cmdkeyunbind"));
+        addArg(&cmdData, STR("a"));
+        cmdkeyunbind(&cmdData);
+        assert(streq(nextEntry(&iter)->str, STR("Unbound \"a\"")));
+
+        clearArgs(&cmdData);
+        addArg(&cmdData, STR("cmdkeyunbind"));
+        addArg(&cmdData, STR("a"));
+        cmdkeyunbind(&cmdData);
+        assert(streq(nextEntry(&iter)->str, STR("\"a\" is not currently bound")));
+
+        clearArgs(&cmdData);
+        addArg(&cmdData, STR("cmdkeyunbind"));
+        addArg(&cmdData, STR("invalid"));
+        cmdkeyunbind(&cmdData);
+        assert(streq(nextEntry(&iter)->str, STR("\"invalid\" is not a valid key")));
     }
 }}
 

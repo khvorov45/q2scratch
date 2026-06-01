@@ -666,8 +666,27 @@ static void cmdkeybind(CommandData* data) {
 }
 
 static void cmdkeyunbind(CommandData* data) {
-    unused(data);
-    unimplemented();
+    if (data->args.arr.len == 2) {
+        Str keyName = data->args.arr.ptr[1].value;
+        InputKey key = keyFromStr(keyName);
+
+        if (key != InputKey_None) {
+            KeyBinding* binding = data->keybindings.ptr + key;
+            if (binding->str.len > 0) {
+                binding->str.len = 0;
+                binding->arena.used = 0;
+                addLogEntry(data->log, LogEntryCategory_Ok, "Unbound \"%*s\"", LIT(keyName));
+            } else {
+                addLogEntry(data->log, LogEntryCategory_Ok, "\"%*s\" is not currently bound", LIT(keyName) );
+            }
+
+        } else {
+            addLogEntry(data->log, LogEntryCategory_Error, "\"%*s\" is not a valid key", LIT(keyName));
+        }
+
+    } else {
+        addLogEntry(data->log, LogEntryCategory_Ok, "usage: unkeybind <key>");
+    }
 }
 
 static void cmdkeyunbindall(CommandData* data) {
