@@ -17,7 +17,7 @@
 #endif
 
 #define unimplemented() __debugbreak()
-#define assertStrInArena(str, arena) assert((u64)(str).ptr >= (u64)(arena).base && (u64)(str).ptr + (u64)(str).len <= (u64)(arena).base + (u64)(arena).size);
+#define assertStrInArena(str, arena) assert((u64)(str).ptr >= (u64)(arena)->base && (u64)(str).ptr + (u64)(str).len <= (u64)(arena)->base + (u64)(arena)->size);
 #define STRINGIFY_(x) #x
 #define STRINGIFY(x) STRINGIFY_(x)
 #define STR(x) ((Str){x, sizeof(x) - 1})
@@ -28,10 +28,12 @@
 #define dynarrpush(arr, val) assert((arr)->len < (arr)->cap); (arr)->ptr[(arr)->len++] = (val)
 #define dynarrpusharr(arr, val) assert((arr).len + (val).len <= (arr).cap); memcpy((arr).ptr + (arr).len, (val).ptr, (val).len * sizeof(*(val).ptr)); (arr).len += (val).len
 #define slicefromcarray(carr) {.ptr = carr, .len = carrayCount(carr)}
-#define arenaAllocArray(arena, type, count) ((type*)arenaAlloc((arena), sizeof(type) * (count)))
-#define arenaAllocAndZeroArray(arena, type, count) ((type*)arenaAllocAndZero((arena), sizeof(type) * (count)))
-#define arenaAllocDynarr(arena, type, capacity) {.ptr = arenaAllocArray(arena, type, capacity), .len = 0, .cap = capacity}
-#define arenaAllocAndZeroDynarr(arena, type, capacity) {.ptr = arenaAllocAndZeroArray(arena, type, capacity), .len = 0, .cap = capacity}
+#define arenaAllocOne(arena, type) (type*)arenaAllocBytes((arena), sizeof(type))
+#define arenaAllocAndZeroOne(arena, type) (type*)arenaAllocAndZeroBytes((arena), sizeof(type))
+#define arenaAllocArray(arena, type, count) {.ptr = (type*)arenaAllocBytes((arena), sizeof(type) * (count)), .len = (count)}
+#define arenaAllocAndZeroArray(arena, type, count) {.ptr = (type*)arenaAllocAndZeroBytes((arena), sizeof(type) * (count)), .len = (count)}
+#define arenaAllocDynarr(arena, type, capacity) {.ptr = (type*)arenaAllocBytes((arena), sizeof(type) * (capacity)), .len = 0, .cap = (capacity)}
+#define arenaAllocAndZeroDynarr(arena, type, capacity) {.ptr = (type*)arenaAllocAndZeroBytes((arena), sizeof(type) * (capacity)), .len = 0, .cap = (capacity)}
 #define tempMemoryBlock(arena_) for (TempMemory _temp_ = beginTempMemory(arena_); _temp_.arena; endTempMemory(&_temp_))
 
 typedef int8_t i8;
@@ -69,22 +71,22 @@ typedef struct Arena {
 static i64 arenaFreesize(Arena* arena) { return arena->size - arena->used;}
 static void* arenaFreeptr(Arena* arena) { return arena->base + arena->used;}
 
-static void* arenaAlloc(Arena* arena, i64 size) {
+static void* arenaAllocBytes(Arena* arena, i64 size) {
     assert(arenaFreesize(arena) >= size);
     void* result = arenaFreeptr(arena);
     arena->used += size;
     return result;
 }
 
-static void* arenaAllocAndZero(Arena* arena, i64 size) {
-    void* ptr = arenaAlloc(arena, size);
+static void* arenaAllocAndZeroBytes(Arena* arena, i64 size) {
+    void* ptr = arenaAllocBytes(arena, size);
     memset(ptr, 0, size);
     return ptr;
 }
 
 static Arena arenaFromArena(Arena* arena, i64 size) {
     Arena result = {
-        .base = arenaAlloc(arena, size),
+        .base = arenaAllocBytes(arena, size),
         .size = size,
     };
     return result;
@@ -185,7 +187,7 @@ static void addToStr(StrBuilder* builder, char* fmt, ...) {
 static Str endStr(StrBuilder* builder) {
     Str str = {.ptr = builder->start, .len = (i64)((u64)arenaFreeptr(builder->arena) - (u64)builder->start)};
     if (arenaFreesize(builder->arena) >= 1) {
-        arenaAllocAndZero(builder->arena, 1); // NOTE: null terminator, we don't need it but it's good for debugging
+        arenaAllocAndZeroBytes(builder->arena, 1); // NOTE: null terminator, we don't need it but it's good for debugging
     }
     *builder = (StrBuilder) {};
     return str;
@@ -235,9 +237,7 @@ typedef struct Log {
 } Log;
 
 static Log createLog(Arena* arena, i64 numSubBuffers, i64 maxEntryCountInEachSubbuffer, i64 stringBufferSizeInEachSubbuffer) {
-    Log log = {};
-    log.circle.len = numSubBuffers;
-    log.circle.ptr = arenaAllocAndZeroArray(arena, LogSubBuffer, log.circle.len);
+    Log log = {.circle = (LogSubBuffers) arenaAllocArray(arena, LogSubBuffer, numSubBuffers)};
     for (i64 index = 0; index < log.circle.len; index++) {
         log.circle.ptr[index].entries = (LogEntries) arenaAllocDynarr(arena, LogEntry, maxEntryCountInEachSubbuffer);
         log.circle.ptr[index].arena = arenaFromArena(arena, stringBufferSizeInEachSubbuffer);
@@ -413,9 +413,8 @@ typedef struct Commands {Command* ptr; i64 len; i64 cap;} Commands;
 typedef struct CommandAlias {
     Str name;
     Str value;
-    Arena arena;
 } CommandAlias;
-typedef struct CommandAliases {struct {CommandAlias* ptr; i64 len; i64 cap;} arr; Arena arena;} CommandAliases;
+typedef struct CommandAliases {struct {CommandAlias* ptr; i64 len; i64 cap;} arr; struct {Arena* ptr; i64 len;} arenas;} CommandAliases;
 
 _STATIC_ASSERT(offsetof(Command, name) == 0 && offsetof(CommandAlias, name) == 0);
 #define findByName(slice, name) findByName_(slice.ptr, slice.len, name, sizeof(slice.ptr[0]))
@@ -433,7 +432,7 @@ static void* findByName_(void* ptr, i64 len, Str name, i64 sizeOfOneEntry) {
 typedef struct CommandArg {
     Str value;
 } CommandArg;
-typedef struct CommandArgs {CommandArg* ptr; i64 len; i64 cap;} CommandArgs;
+typedef struct CommandArgs {struct {CommandArg* ptr; i64 len; i64 cap;} arr; Arena arena;} CommandArgs;
 
 typedef struct CommandExecution {
     Arena arena;
@@ -444,7 +443,6 @@ typedef struct CommandData {
     Commands cmds;
     CommandAliases aliases;
     CommandArgs args;
-    Arena argsArena;
     CommandExecution execution;
     struct {KeyBinding* ptr; i64 len;} keybindings;
     Arena scratchArena;
@@ -463,35 +461,40 @@ typedef struct CommandDataOpts {
 static CommandData createCommandData_(CommandDataOpts opts) {
     CommandData cmdData = {
         .cmds = (Commands) arenaAllocDynarr(opts.arena, Command, opts.maxCmds),
-        .aliases = (CommandAliases) {.arr = arenaAllocDynarr(opts.arena, CommandAlias, opts.maxAliases), .arena = arenaFromArena(opts.arena, opts.aliasArenaSize * (opts.maxAliases))},
-        .args = (CommandArgs) arenaAllocDynarr(opts. arena, CommandArg, opts.maxArgs),
-        .argsArena = arenaFromArena(opts.arena, opts.argsArenaSize),
+        .aliases = {
+            .arr = arenaAllocDynarr(opts.arena, CommandAlias, opts.maxAliases),
+            .arenas = arenaAllocArray(opts.arena, Arena, opts.maxAliases),
+        },
+        .args = {.arr = arenaAllocDynarr(opts. arena, CommandArg, opts.maxArgs), .arena = arenaFromArena(opts.arena, opts.argsArenaSize)},
         .execution = (CommandExecution) {.arena = arenaFromArena(opts.arena, opts.executeArenaSize), .pauseUntilNextFrame = false},
-        .keybindings = {.ptr = arenaAllocAndZeroArray(opts.arena, KeyBinding, InputKey_Count), .len = InputKey_Count},
+        .keybindings = arenaAllocAndZeroArray(opts.arena, KeyBinding, InputKey_Count),
         .scratchArena = arenaFromArena(opts.arena, opts.scratchArenaSize),
         .log = opts.log,
         .platform = opts.platform
     };
-    for (i64 index = 0; index < InputKey_Count; index++) {
+    for (i64 index = 0; index < cmdData.keybindings.len; index++) {
         cmdData.keybindings.ptr[index].arena = arenaFromArena(opts.arena, opts.aliasArenaSize);
+    }
+    for (i64 index = 0; index < cmdData.aliases.arenas.len; index++) {
+        cmdData.aliases.arenas.ptr[index] = arenaFromArena(opts.arena, opts.aliasArenaSize);
     }
     return cmdData;
 }
 
 static void clearArgs(CommandData* data) {
-    data->argsArena.used = 0;
-    data->args.len = 0;
+    data->args.arena.used = 0;
+    data->args.arr.len = 0;
 }
 
 static void addArg(CommandData* data, Str arg) {
-    if (data->args.len < data->args.cap) {
-        assert(data->args.len >= 0);
-        CommandArg newArg = {.value = strfmt(&data->argsArena, "%*s", LIT(arg))};
-        dynarrpush(&data->args, newArg);
-        CommandArg* addedArg = data->args.ptr + data->args.len - 1;
-        assertStrInArena(addedArg->value, data->argsArena);
+    if (data->args.arr.len < data->args.arr.cap) {
+        assert(data->args.arr.len >= 0);
+        CommandArg newArg = {.value = strfmt(&data->args.arena, "%*s", LIT(arg))};
+        dynarrpush(&data->args.arr, newArg);
+        CommandArg* addedArg = data->args.arr.ptr + data->args.arr.len - 1;
+        assertStrInArena(addedArg->value, &data->args.arena);
     } else {
-        assert(data->args.len == data->args.cap);
+        assert(data->args.arr.len == data->args.arr.cap);
         addLogEntry(data->log, LogEntryCategory_Error, "could not add arg, buffer full");
     }
 }
@@ -524,10 +527,10 @@ static void cmdlist(CommandData* data) {
 }
 
 static void cmdexec(CommandData* data) {
-    if (data->args.len == 2) {
+    if (data->args.arr.len == 2) {
         assert(data->platform->readEntireFile);
         assert(data->execution.arena.base);
-        Str filename = data->args.ptr[1].value;
+        Str filename = data->args.arr.ptr[1].value;
         ReadResult readResult = data->platform->readEntireFile(&data->execution.arena, filename);
         if (readResult.status == Status_Ok) {
             addLogEntry(data->log, LogEntryCategory_Ok, "execing %*s", LIT(filename));
@@ -542,8 +545,8 @@ static void cmdexec(CommandData* data) {
 static void cmdecho(CommandData* data) {
     tempMemoryBlock(&data->scratchArena) {
         StrBuilder builder = beginStr(&data->scratchArena);
-        for (i64 index = 1; index < data->args.len; index++) {
-            Str arg = data->args.ptr[index].value;
+        for (i64 index = 1; index < data->args.arr.len; index++) {
+            Str arg = data->args.arr.ptr[index].value;
             addToStr(&builder, "%*s ", LIT(arg));
         }
         Str str = endStr(&builder);
@@ -552,7 +555,7 @@ static void cmdecho(CommandData* data) {
 }
 
 static void cmdalias(CommandData* data) {
-    if (data->args.len == 1) {
+    if (data->args.arr.len == 1) {
         tempMemoryBlock(&data->scratchArena) {
             StrBuilder builder = beginStr(&data->scratchArena);
             addToStr(&builder, "Current alias commands:\n");
@@ -564,17 +567,19 @@ static void cmdalias(CommandData* data) {
             addLogEntry(data->log, LogEntryCategory_Ok, "%*s", LIT(out));
         }
 
-    } else if (data->args.len == 2) {
+    } else if (data->args.arr.len == 2) {
         addLogEntry(data->log, LogEntryCategory_Error, "usage: alias <name> <command(s)>");
 
-    } else if (data->args.len > 2) {
-        Str nameInArgs = data->args.ptr[1].value;
+    } else if (data->args.arr.len > 2) {
+        Str nameInArgs = data->args.arr.ptr[1].value;
         CommandAlias* alias = findByName(data->aliases.arr, nameInArgs);
+        Arena* aliasArena = 0;
 
         if (!alias) {
             if (data->aliases.arr.len < data->aliases.arr.cap) {
-                CommandAlias newAlias = {.arena = arenaFromArena(&data->aliases.arena, data->aliases.arena.size / data->aliases.arr.cap)};
-                newAlias.name = strfmt(&newAlias.arena, "%*s", LIT(nameInArgs));
+                assert(data->aliases.arr.len < data->aliases.arenas.len && data->aliases.arr.len >= 0);
+                aliasArena = data->aliases.arenas.ptr + data->aliases.arr.len;
+                CommandAlias newAlias = {.name = strfmt(aliasArena, "%*s", LIT(nameInArgs))};
                 dynarrpush(&data->aliases.arr, newAlias);
                 alias = data->aliases.arr.ptr + data->aliases.arr.len - 1;
             } else {
@@ -584,29 +589,34 @@ static void cmdalias(CommandData* data) {
 
         } else {
             addLogEntry(data->log, LogEntryCategory_Ok, "overriding previously defined alias %*s", LIT(nameInArgs));
-            assert(alias->name.ptr == alias->arena.base);
-            alias->arena.used = alias->name.len + 1;
+            i64 aliasIndex = alias - data->aliases.arr.ptr;
+            assert(aliasIndex >= 0 && aliasIndex < data->aliases.arenas.len);
+            aliasArena = data->aliases.arenas.ptr + aliasIndex;
+            assert(alias->name.ptr == aliasArena->base);
+            aliasArena->used = alias->name.len + 1;
             assert(alias->name.ptr[alias->name.len] == '\0'); // NOTE: we don't need null terminators but it's good for debugging, so preserve them
             alias->value = (Str) {};
         }
 
         if (alias) {
-            assert(alias->arena.base);
+            assert(aliasArena);
+            assert(aliasArena->base);
             assert(alias->name.len > 0);
             assert(alias->name.ptr);
-            assertStrInArena(alias->name, alias->arena);
+            assert(streq((Str) {.ptr = (char*)aliasArena->base, .len = aliasArena->used - 1}, alias->name));
+            assertStrInArena(alias->name, aliasArena);
 
-            StrBuilder builder = beginStr(&alias->arena);
-            for (i64 index = 2; index < data->args.len; index++) {
-                Str arg = data->args.ptr[index].value;
+            StrBuilder builder = beginStr(aliasArena);
+            for (i64 index = 2; index < data->args.arr.len; index++) {
+                Str arg = data->args.arr.ptr[index].value;
                 addToStr(&builder, "%*s", LIT(arg));
-                if (index != data->args.len - 1) {
+                if (index != data->args.arr.len - 1) {
                     addToStr(&builder, " ");
                 }
             }
             alias->value = endStr(&builder);
 
-            assertStrInArena(alias->value, alias->arena);
+            assertStrInArena(alias->value, aliasArena);
         }
     }
 }
@@ -616,13 +626,13 @@ static void cmdwait(CommandData* data) {
 }
 
 static void cmdkeybind(CommandData* data) {
-    if (data->args.len >= 2) {
-        Str keyName = data->args.ptr[1].value;
+    if (data->args.arr.len >= 2) {
+        Str keyName = data->args.arr.ptr[1].value;
         InputKey key = keyFromStr(keyName);
 
         if (key != InputKey_None) {
             KeyBinding* binding = data->keybindings.ptr + key;
-            if (data->args.len == 2) {
+            if (data->args.arr.len == 2) {
                 if (binding->str.len > 0) {
                     addLogEntry(data->log, LogEntryCategory_Ok, "Current binding for \"%*s\" is \"%*s\"", LIT(keyName), LIT(binding->str));
                 } else {
@@ -631,10 +641,10 @@ static void cmdkeybind(CommandData* data) {
             } else {
                 tempMemoryBlock(&data->scratchArena) {
                     StrBuilder builder = beginStr(&data->scratchArena);
-                    for (i64 index = 2; index < data->args.len; index++) {
-                        Str arg = data->args.ptr[index].value;
+                    for (i64 index = 2; index < data->args.arr.len; index++) {
+                        Str arg = data->args.arr.ptr[index].value;
                         addToStr(&builder, "%*s", LIT(arg));
-                        if (index != (data->args.len - 1)) {
+                        if (index != (data->args.arr.len - 1)) {
                             addToStr(&builder, " ");
                         }
                     }
@@ -642,7 +652,7 @@ static void cmdkeybind(CommandData* data) {
                     binding->arena.used = 0;
                     binding->str = strfmt(&binding->arena, "%*s", LIT(command));
                     addLogEntry(data->log, LogEntryCategory_Ok, "Bound \"%*s\" to \"%*s\"", LIT(keyName), LIT(command));
-                    assertStrInArena(binding->str, binding->arena);
+                    assertStrInArena(binding->str, &binding->arena);
                 }
             }
 
@@ -675,10 +685,10 @@ static void cmdkeybindlist(CommandData* data) {
 //
 
 static void gameInit(Arena* arena, Platform* platform) {
-    Log* log = arenaAllocAndZeroArray(arena, Log, 1);
+    Log* log = arenaAllocAndZeroOne(arena, Log);
     *log = createLog(arena, 2, 1024, 8 * Kilobyte);
 
-    CommandData* cmdData = arenaAllocAndZeroArray(arena, CommandData, 1);
+    CommandData* cmdData = arenaAllocAndZeroOne(arena, CommandData);
     *cmdData = createCommandData(.arena = arena, .log = log, .platform = platform);
 
     addCommand(cmdData, cmdlist);

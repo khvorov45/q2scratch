@@ -9,7 +9,7 @@
 //
 
 static Strslice parseCommandLine(Arena* arena, Str cmdline) {
-    Str* argsSliceStart = arenaAllocAndZeroArray(arena, Str, 1);
+    Str* argsSliceStart = arenaAllocAndZeroOne(arena, Str);
     *argsSliceStart = STR("exe");
 
     i64 numArgsInCmdline = 1;
@@ -21,7 +21,7 @@ static Strslice parseCommandLine(Arena* arena, Str cmdline) {
         char* argEnd = cmdline.ptr + charIndex;
         Str arg = {.ptr = argStart, .len = argEnd - argStart};
         if (arg.len > 0) {
-            Str* entry = arenaAllocAndZeroArray(arena, Str, 1);
+            Str* entry = arenaAllocAndZeroOne(arena, Str);
             *entry = arg;
             numArgsInCmdline += 1;
         }
@@ -63,12 +63,12 @@ static ReadResult readEntireFile(Arena* arena, Str filepath) {
         BOOL GetFileSizeExResult = GetFileSizeEx(hfile, &fileSize);
         if (GetFileSizeExResult) {
             TempMemory temp = beginTempMemory(arena);
-            void* fileContent = arenaAllocArray(arena, u8, fileSize.QuadPart);
+            u8slice fileContent = arenaAllocArray(arena, u8, fileSize.QuadPart);
             DWORD bytesRead = 0;
-            BOOL ReadFileResult = ReadFile(hfile, fileContent, fileSize.QuadPart, &bytesRead, 0);
+            BOOL ReadFileResult = ReadFile(hfile, fileContent.ptr, fileSize.QuadPart, &bytesRead, 0);
             if (ReadFileResult && bytesRead == fileSize.QuadPart) {
                 result.status = Status_Ok;
-                result.file = (u8slice) {fileContent, fileSize.QuadPart};
+                result.file = fileContent;
                 keepTempMemory(&temp);
             } else {
                 endTempMemory(&temp);
@@ -338,10 +338,11 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
         cmdalias(&cmdData);
         assert(cmdData.aliases.arr.len == 1);
         CommandAlias alias = cmdData.aliases.arr.ptr[0];
+        Arena* aliasArena = cmdData.aliases.arenas.ptr;
         assert(streq(alias.name, STR("aliasname")));
         assert(streq(alias.value, STR("aliasvalue1 aliasvalue2")));
-        assertStrInArena(alias.name, alias.arena);
-        assertStrInArena(alias.value, alias.arena);
+        assertStrInArena(alias.name, aliasArena);
+        assertStrInArena(alias.value, aliasArena);
 
         clearArgs(&cmdData);
         addArg(&cmdData, STR("alias"));
@@ -361,7 +362,7 @@ static void allTests_(Arena* arena, Platform* platform) {tempMemoryBlock(arena) 
         assert(cmdData.aliases.arr.len == 2);
         alias = cmdData.aliases.arr.ptr[0];
         assert(streq(alias.value, STR("aliasvalue1")));
-        assert(alias.arena.used == sizeof("aliasname") + sizeof("aliasvalue1"));
+        assert(aliasArena->used == sizeof("aliasname") + sizeof("aliasvalue1"));
 
         assert(streq(currentEntry(&iter)->str, STR("overriding previously defined alias aliasname")));
     }
