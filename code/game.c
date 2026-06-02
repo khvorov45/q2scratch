@@ -798,10 +798,14 @@ static void gameInit(Arena* arena, Platform* platform) {
     addCommand(cmdData, cmdkeyunbindall);
     addCommand(cmdData, cmdkeybindlist);
 
-// 	NET_Init ();
-// 	Netchan_Init ();
+	// CL_InitLocal ();
+	// IN_Init ();
 
-// 	SV_Init ();
+ //   //	Cbuf_AddText ("exec autoexec.cfg\n");
+	// FS_ExecAutoexec ();
+	// Cbuf_Execute ();
+
+
 // 	CL_Init ();
 
 // 	// add + commands from command line
